@@ -125,13 +125,7 @@ public class UnityWebRTCClient : MonoBehaviour
         RTCConfiguration config = default;
         config.iceServers = new[]
         {
-            new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } },
-            new RTCIceServer 
-            { 
-                urls = new[] { "turn:YOUR_TURN_SERVER" },
-                username = "YOUR_USERNAME",
-                credential = "YOUR_PASSWORD"
-            }
+            new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } }
         };
         return config;
     }

@@ -5,7 +5,7 @@ import av
 import mss
 import numpy as np
 from aiohttp import web
-from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+from aiortc import MediaStreamTrack, RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig
@@ -74,15 +74,10 @@ class WebRTCServer:
         params = await request.json()
         offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
-        # Configure WebRTC with STUN/TURN servers
+        # Configure WebRTC with STUN server
         configuration = RTCConfiguration(
             iceServers=[
-                {"urls": ["stun:stun.l.google.com:19302"]},
-                {
-                    "urls": ["turn:YOUR_TURN_SERVER"],
-                    "username": "YOUR_USERNAME",
-                    "credential": "YOUR_PASSWORD"
-                }
+                {"urls": ["stun:stun.l.google.com:19302"]}
             ]
         )
         pc = RTCPeerConnection(configuration=configuration)

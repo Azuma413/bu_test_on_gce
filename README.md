@@ -34,7 +34,9 @@ sudo apt-get install -y xvfb
 ```
 
 2. Unity側のセットアップ:
-   - Unity Package Manager から WebRTC パッケージをインストール
+   - Unity Package Manager から WebRTC パッケージをインストール\
+https://github.com/Unity-Technologies/com.unity.webrtc/blob/main/Documentation~/install.md
+
    - プロジェクトに UnityWebRTCClient.cs スクリプトを追加
    - 新しい Scene を作成し、以下の手順で設定:
      1. 空の GameObject を作成し、UnityWebRTCClient スクリプトをアタッチ
