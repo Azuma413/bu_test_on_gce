@@ -1,0 +1,2 @@
+# bu_test_on_gce
+browser_useをgce上で実行する．仮想ディスプレイでブラウザを動かして，そのキャプチャ映像をローカルのUnityに送る．
