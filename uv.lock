@@ -314,6 +314,7 @@ dependencies = [
     { name = "mss" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pyopenssl" },
     { name = "python-dotenv" },
     { name = "pyvirtualdisplay" },
 ]
@@ -327,6 +328,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=0.3.1" },
     { name = "mss", specifier = ">=10.0.0" },
     { name = "numpy", specifier = ">=1.26.4" },
+    { name = "pyopenssl", specifier = ">=25.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "pyvirtualdisplay", specifier = ">=3.0" },
 ]

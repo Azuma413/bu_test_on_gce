@@ -26,9 +26,8 @@
 1. GCE側のセットアップ:
 ```bash
 # 仮想ディスプレイの依存パッケージをインストール（Ubuntu/Debian の場合）
-sudo apt-get update
-sudo apt-get install -y xvfb
-sudo apt install git
+sudo apt update
+sudo apt install xvfb git fonts-dejavu -y
 curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/Azuma413/bu_test_on_gce.git
 ```
@@ -36,6 +35,7 @@ git clone https://github.com/Azuma413/bu_test_on_gce.git
 # 必要なパッケージのインストール
 uv add pyvirtualdisplay mss aiortc aiohttp av python-dotenv numpy browser-use
 uv run playwright install
+uv run playwright install-deps
 ```
 
 2. Unity側のセットアップ:
@@ -51,7 +51,7 @@ https://github.com/Unity-Technologies/com.unity.webrtc/blob/main/Documentation~/
 
 1. GCE側でWebRTCサーバーを起動:
 ```bash
-python webrtc_browser_stream.py
+xvfb-run uv run webrtc_test.py
 ```
 
 2. Unity側:

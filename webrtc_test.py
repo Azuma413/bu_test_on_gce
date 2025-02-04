@@ -53,7 +53,7 @@ class WebRTCServer:
     async def initialize_browser_agent(self, task: str):
         """Initialize and run browser agent with specified task."""
         self.browser = self.create_browser()
-        model = ChatOpenAI(model='gpt-4')
+        model = ChatOpenAI(model='gpt-4o')
         agent = Agent(
             task=task,
             llm=model,
