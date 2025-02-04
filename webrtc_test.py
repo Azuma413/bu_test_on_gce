@@ -119,21 +119,6 @@ async def main():
 
     # Add cleanup on shutdown
     app.on_shutdown.append(lambda _: server.cleanup())
-    self.display.stop()
-
-async def main():
-    # Create WebRTC server instance
-    server = WebRTCServer()
-
-    # Start virtual display
-    await server.create_virtual_display()
-
-    # Setup web application
-    app = web.Application()
-    app.router.add_post("/offer", server.offer)
-
-    # Add cleanup on shutdown
-    app.on_shutdown.append(lambda _: server.cleanup())
 
     # Initialize browser with a sample task
     await server.initialize_browser_agent("Navigate to https://www.google.com")
