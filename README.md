@@ -25,12 +25,16 @@
 
 1. GCE側のセットアップ:
 ```bash
-# 必要なパッケージのインストール
-pip install pyvirtualdisplay mss aiortc aiohttp av python-dotenv numpy
-pip install browser-use
 # 仮想ディスプレイの依存パッケージをインストール（Ubuntu/Debian の場合）
 sudo apt-get update
 sudo apt-get install -y xvfb
+sudo apt install git
+curl -LsSf https://astral.sh/uv/install.sh | sh
+git clone https://github.com/Azuma413/bu_test_on_gce.git
+```
+```bash
+# 必要なパッケージのインストール
+pip install pyvirtualdisplay mss aiortc aiohttp av python-dotenv numpy browser-use
 playwright install
 ```
 
