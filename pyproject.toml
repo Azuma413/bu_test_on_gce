@@ -1,0 +1,17 @@
+[project]
+name = "bu-test-on-gce"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.11.11",
+    "aiortc>=1.10.1",
+    "av>=13.1.0",
+    "browser-use>=0.1.35",
+    "langchain-openai>=0.3.1",
+    "mss>=10.0.0",
+    "numpy>=1.26.4",
+    "python-dotenv>=1.0.1",
+    "pyvirtualdisplay>=3.0",
+]

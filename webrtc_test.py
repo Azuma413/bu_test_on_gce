@@ -119,7 +119,7 @@ async def main():
 
     # Add cleanup on shutdown
     app.on_shutdown.append(lambda _: server.cleanup())
-            self.display.stop()
+    self.display.stop()
 
 async def main():
     # Create WebRTC server instance
