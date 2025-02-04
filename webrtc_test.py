@@ -72,19 +72,19 @@ class WebRTCServer:
             # Configure WebRTC with STUN and TURN servers
             configuration = RTCConfiguration(
                 iceServers=[
-                    {"urls": [
-                        "stun:stun.l.google.com:19302",
-                        "stun:stun1.l.google.com:19302",
-                        "stun:stun2.l.google.com:19302",
-                        "stun:stun3.l.google.com:19302",
-                        "stun:stun4.l.google.com:19302"
-                    ]},
+                    {"urls": ["stun:stun.l.google.com:19302"]},
                     {
-                        "urls": "turn:turn.webrtc.org:3478",
+                        "urls": [
+                            "turn:34.133.108.164:3478?transport=udp",
+                            "turn:34.133.108.164:3478?transport=tcp"
+                        ],
                         "username": "webrtc",
                         "credential": "webrtc"
                     }
-                ]
+                ],
+                iceCandidatePoolSize=10,
+                bundlePolicy="max-bundle",
+                rtcpMuxPolicy="require"
             )
             pc = RTCPeerConnection(configuration=configuration)
             self.pcs.add(pc)
@@ -157,24 +157,32 @@ async def main():
     app = web.Application()
     
     # Setup CORS with more permissive settings
+    # Setup CORS middleware
+    @web.middleware
     async def cors_middleware(request, handler):
         if request.method == "OPTIONS":
-            response = await handler(request)
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Methods'] = '*'
-            response.headers['Access-Control-Allow-Headers'] = '*'
-            response.headers['Access-Control-Max-Age'] = '3600'
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            return response
-        
+            headers = {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Max-Age': '3600',
+            }
+            return web.Response(headers=headers)
+            
         response = await handler(request)
         response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
 
     app.middlewares.append(cors_middleware)
+    
+    # Setup routes
     app.router.add_post("/offer", server.offer)
-    app.router.add_route("OPTIONS", "/offer", lambda r: web.Response())
+    
+    # Add a basic handler for the root path
+    async def index(request):
+        return web.Response(text="WebRTC Server Running", content_type="text/plain")
+    
+    app.router.add_get("/", index)
 
     # Add cleanup on shutdown
     app.on_shutdown.append(lambda _: server.cleanup())
@@ -183,15 +191,16 @@ async def main():
     await server.initialize_browser_agent("Navigate to https://www.google.com")
 
     # Start the server with SSL
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ssl_context.load_cert_chain('server.crt', 'server.key')
+    ssl_context.verify_mode = ssl.CERT_NONE  # Allow self-signed certificates
     
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8443, ssl_context=ssl_context)
     await site.start()
 
-    print("Server running on https://0.0.0.0:8443")
+    print(f"Server running on https://34.133.108.164:8443")
     print("WebRTC configuration initialized with STUN and TURN servers")
 
     try:
