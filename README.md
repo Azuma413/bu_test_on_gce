@@ -34,8 +34,8 @@ git clone https://github.com/Azuma413/bu_test_on_gce.git
 ```
 ```bash
 # 必要なパッケージのインストール
-pip install pyvirtualdisplay mss aiortc aiohttp av python-dotenv numpy browser-use
-playwright install
+uv add pyvirtualdisplay mss aiortc aiohttp av python-dotenv numpy browser-use
+uv run playwright install
 ```
 
 2. Unity側のセットアップ:
