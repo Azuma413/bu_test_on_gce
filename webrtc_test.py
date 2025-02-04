@@ -11,8 +11,6 @@ from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from pyvirtualdisplay import Display
-
 # Load environment variables
 load_dotenv()
 
@@ -40,13 +38,7 @@ class ScreenCaptureTrack(MediaStreamTrack):
 class WebRTCServer:
     def __init__(self):
         self.pcs = set()
-        self.display = None
         self.browser = None
-
-    async def create_virtual_display(self):
-        """Create and start virtual display."""
-        self.display = Display(visible=0, size=(1280, 720))
-        self.display.start()
 
     def create_browser(self) -> Browser:
         """Create browser instance."""
@@ -117,21 +109,29 @@ class WebRTCServer:
         if self.browser:
             self.browser.quit()
 
-        # Stop virtual display
-        if self.display:
+async def main():
+    # Create WebRTC server instance
+    server = WebRTCServer()
+
+    # Setup web application
+    app = web.Application()
+    app.router.add_post("/offer", server.offer)
+
+    # Add cleanup on shutdown
+    app.on_shutdown.append(lambda _: server.cleanup())
             self.display.stop()
 
 async def main():
     # Create WebRTC server instance
     server = WebRTCServer()
-    
+
     # Start virtual display
     await server.create_virtual_display()
 
     # Setup web application
     app = web.Application()
     app.router.add_post("/offer", server.offer)
-    
+
     # Add cleanup on shutdown
     app.on_shutdown.append(lambda _: server.cleanup())
 
@@ -145,7 +145,7 @@ async def main():
     await site.start()
 
     print("Server running on http://localhost:8080")
-    
+
     try:
         # Keep the server running
         await asyncio.Event().wait()
