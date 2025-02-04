@@ -9,6 +9,15 @@ def generate_self_signed_cert():
     # Generate certificate
     cert = crypto.X509()
     cert.get_subject().CN = "34.133.108.164"
+    
+    # Add Subject Alternative Name
+    san_list = ["IP:34.133.108.164"]
+    san = crypto.X509Extension(
+        b"subjectAltName",
+        False,
+        ", ".join(san_list).encode()
+    )
+    cert.add_extensions([san])
     cert.get_subject().C = "JP"
     cert.get_subject().ST = "Tokyo"
     cert.get_subject().L = "Tokyo"

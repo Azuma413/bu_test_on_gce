@@ -91,12 +91,24 @@ public class WebRTCClient : MonoBehaviour
 
         peerConnection.OnConnectionStateChange = state =>
         {
-            Debug.Log($"Connection State: {state}");
+            Debug.Log($"Connection State Changed to: {state}");
+            if (state == RTCPeerConnectionState.Failed)
+            {
+                Debug.LogError("Connection failed - ICE connectivity check failed");
+            }
+            else if (state == RTCPeerConnectionState.Disconnected)
+            {
+                Debug.LogWarning("Connection disconnected - ICE connection was interrupted");
+            }
+            else if (state == RTCPeerConnectionState.Connected)
+            {
+                Debug.Log("Connection established successfully - ICE connection is active");
+            }
         };
 
         peerConnection.OnIceCandidate = candidate =>
         {
-            Debug.Log($"ICE Candidate: {candidate}");
+            Debug.Log($"ICE Candidate: {candidate.Candidate}, Type: {candidate.Type}, Protocol: {candidate.Protocol}");
         };
 
         peerConnection.OnDataChannel = channel =>
@@ -146,7 +158,7 @@ public class WebRTCClient : MonoBehaviour
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
             request.certificateHandler = new BypassCertificate();
-            request.timeout = 30; // 30秒のタイムアウト
+            request.timeout = 60; // Increase timeout to 60 seconds
 
             yield return request.SendWebRequest();
 
@@ -193,24 +205,39 @@ public class WebRTCClient : MonoBehaviour
 
     private void UpdateDisplayImage(Texture texture)
     {
+        if (isDisposed) return;
         if (displayImage != null && texture != null)
         {
             displayImage.texture = texture;
+        }
+        else if (displayImage == null)
+        {
+            Debug.LogError("Display image reference is missing");
         }
     }
 
     private RTCConfiguration GetDefaultConfiguration()
     {
         RTCConfiguration config = default;
-        // Using only Google's STUN server as it's more reliable
         config.iceServers = new[]
         {
-            new RTCIceServer { urls = new[] { 
-                "stun:stun.l.google.com:19302",
-                "stun:stun1.l.google.com:19302",
-                "stun:stun2.l.google.com:19302"
-            } }
+            new RTCIceServer { 
+                urls = new[] { 
+                    "stun:stun.l.google.com:19302",
+                    "stun:stun1.l.google.com:19302",
+                    "stun:stun2.l.google.com:19302",
+                    "stun:stun3.l.google.com:19302",
+                    "stun:stun4.l.google.com:19302"
+                }
+            },
+            // Add TURN servers for better connectivity
+            new RTCIceServer {
+                urls = new[] { "turn:turn.webrtc.org:3478" },
+                username = "webrtc",
+                credential = "webrtc"
+            }
         };
+        config.iceTransportPolicy = RTCIceTransportPolicy.All;
         return config;
     }
 

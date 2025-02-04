@@ -64,40 +64,79 @@ class WebRTCServer:
 
     async def offer(self, request):
         """Handle WebRTC offer from client."""
-        params = await request.json()
-        offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+        try:
+            params = await request.json()
+            offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+            print(f"Received offer with type: {params['type']}")
 
-        # Configure WebRTC with STUN server
-        configuration = RTCConfiguration(
-            iceServers=[
-                {"urls": ["stun:stun.l.google.com:19302"]}
-            ]
-        )
-        pc = RTCPeerConnection(configuration=configuration)
-        self.pcs.add(pc)
+            # Configure WebRTC with STUN and TURN servers
+            configuration = RTCConfiguration(
+                iceServers=[
+                    {"urls": [
+                        "stun:stun.l.google.com:19302",
+                        "stun:stun1.l.google.com:19302",
+                        "stun:stun2.l.google.com:19302",
+                        "stun:stun3.l.google.com:19302",
+                        "stun:stun4.l.google.com:19302"
+                    ]},
+                    {
+                        "urls": "turn:turn.webrtc.org:3478",
+                        "username": "webrtc",
+                        "credential": "webrtc"
+                    }
+                ]
+            )
+            pc = RTCPeerConnection(configuration=configuration)
+            self.pcs.add(pc)
 
-        @pc.on("connectionstatechange")
-        async def on_connectionstatechange():
-            if pc.connectionState == "failed":
-                await pc.close()
-                self.pcs.discard(pc)
+            @pc.on("connectionstatechange")
+            async def on_connectionstatechange():
+                print(f"Connection state changed to: {pc.connectionState}")
+                if pc.connectionState == "failed":
+                    print("Connection failed - ICE connectivity check failed")
+                    await pc.close()
+                    self.pcs.discard(pc)
+                elif pc.connectionState == "connected":
+                    print("Connection established successfully")
+                elif pc.connectionState == "disconnected":
+                    print("Connection disconnected")
 
-        # Create screen capture track
-        video = ScreenCaptureTrack()
-        pc.addTrack(video)
+            @pc.on("iceconnectionstatechange")
+            async def on_iceconnectionstatechange():
+                print(f"ICE connection state changed to: {pc.iceConnectionState}")
 
-        # Handle the offer
-        await pc.setRemoteDescription(offer)
-        answer = await pc.createAnswer()
-        await pc.setLocalDescription(answer)
+            @pc.on("icegatheringstatechange")
+            async def on_icegatheringstatechange():
+                print(f"ICE gathering state changed to: {pc.iceGatheringState}")
 
-        return web.Response(
-            content_type="application/json",
-            text=json.dumps({
-                "sdp": pc.localDescription.sdp,
-                "type": pc.localDescription.type
-            })
-        )
+            # Create screen capture track
+            video = ScreenCaptureTrack()
+            pc.addTrack(video)
+
+            # Handle the offer
+            await pc.setRemoteDescription(offer)
+            print("Remote description set successfully")
+            
+            answer = await pc.createAnswer()
+            print("Answer created successfully")
+            
+            await pc.setLocalDescription(answer)
+            print("Local description set successfully")
+
+            return web.Response(
+                content_type="application/json",
+                text=json.dumps({
+                    "sdp": pc.localDescription.sdp,
+                    "type": pc.localDescription.type
+                })
+            )
+        except Exception as e:
+            print(f"Error in offer handler: {str(e)}")
+            return web.Response(
+                status=500,
+                content_type="application/json",
+                text=json.dumps({"error": str(e)})
+            )
 
     async def cleanup(self):
         """Cleanup resources."""
@@ -117,18 +156,20 @@ async def main():
     # Setup web application
     app = web.Application()
     
-    # Setup CORS
+    # Setup CORS with more permissive settings
     async def cors_middleware(request, handler):
         if request.method == "OPTIONS":
             response = await handler(request)
             response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            response.headers['Access-Control-Allow-Methods'] = '*'
+            response.headers['Access-Control-Allow-Headers'] = '*'
+            response.headers['Access-Control-Max-Age'] = '3600'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
             return response
         
         response = await handler(request)
         response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
 
     app.middlewares.append(cors_middleware)
@@ -151,6 +192,7 @@ async def main():
     await site.start()
 
     print("Server running on https://0.0.0.0:8443")
+    print("WebRTC configuration initialized with STUN and TURN servers")
 
     try:
         # Keep the server running
