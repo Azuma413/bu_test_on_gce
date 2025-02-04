@@ -27,10 +27,11 @@
 ```bash
 # 必要なパッケージのインストール
 pip install pyvirtualdisplay mss aiortc aiohttp av python-dotenv numpy
-
+pip install browser-use
 # 仮想ディスプレイの依存パッケージをインストール（Ubuntu/Debian の場合）
 sudo apt-get update
 sudo apt-get install -y xvfb
+playwright install
 ```
 
 2. Unity側のセットアップ:

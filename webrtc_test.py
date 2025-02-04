@@ -45,7 +45,7 @@ class WebRTCServer:
         return Browser(
             config=BrowserConfig(
                 headless=False,
-                chrome_instance_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                # chrome_instance_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
             )
         )
 
