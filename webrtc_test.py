@@ -116,7 +116,24 @@ async def main():
 
     # Setup web application
     app = web.Application()
+    
+    # Setup CORS
+    async def cors_middleware(request, handler):
+        if request.method == "OPTIONS":
+            response = await handler(request)
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            return response
+        
+        response = await handler(request)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+
+    app.middlewares.append(cors_middleware)
     app.router.add_post("/offer", server.offer)
+    app.router.add_route("OPTIONS", "/offer", lambda r: web.Response())
 
     # Add cleanup on shutdown
     app.on_shutdown.append(lambda _: server.cleanup())
