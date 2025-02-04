@@ -77,7 +77,9 @@ python webrtc_browser_stream.py
 1. 接続エラーの場合:
    - GCEのファイアウォール設定を確認
    - ポート8080が利用可能か確認
-   - STUN/TURNサーバーの設定を確認
+   - STUN/TURNサーバーの設定を確認\
+   [こちらのサイト](https://www.checkmynat.com/)でNATの種類を調べることができる．\
+   Symmetric NATでなければ，おそらくTURNサーバは必要ない．
 
 2. 画面キャプチャエラーの場合:
    - 仮想ディスプレイ（Xvfb）が正常に起動しているか確認
