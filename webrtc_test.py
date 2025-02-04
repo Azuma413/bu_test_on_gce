@@ -1,5 +1,6 @@
 import asyncio
 import json
+import ssl
 from typing import Optional
 import av
 import mss
@@ -123,13 +124,16 @@ async def main():
     # Initialize browser with a sample task
     await server.initialize_browser_agent("Navigate to https://www.google.com")
 
-    # Start the server
+    # Start the server with SSL
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.load_cert_chain('server.crt', 'server.key')
+    
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    site = web.TCPSite(runner, "0.0.0.0", 8443, ssl_context=ssl_context)
     await site.start()
 
-    print("Server running on http://localhost:8080")
+    print("Server running on https://0.0.0.0:8443")
 
     try:
         # Keep the server running

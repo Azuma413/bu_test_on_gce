@@ -5,15 +5,21 @@ using UnityEngine.UI;
 using System;
 using System.Text;
 using UnityEngine.Networking;
-using Newtonsoft.Json.Linq;
 
-public class UnityWebRTCClient : MonoBehaviour
+[Serializable]
+public class WebRTCMessage
+{
+    public string type;
+    public string sdp;
+}
+
+public class WebRTCClient : MonoBehaviour
 {
     [SerializeField] private RawImage displayImage;
     private RTCPeerConnection peerConnection;
     private MediaStream receiveStream;
     private RTCDataChannel dataChannel;
-    [SerializeField] private string ServerUrl = "http://YOUR_GCE_IP:8080";
+    [SerializeField] private string ServerUrl = "https://34.133.108.164:8443";
     private VideoStreamTrack videoStreamTrack;
 
     private void Start()
@@ -23,10 +29,7 @@ public class UnityWebRTCClient : MonoBehaviour
 
     private IEnumerator SetupWebRTC()
     {
-        // Initialize WebRTC
-        WebRTC.Initialize();
-
-        // Configure RTCPeerConnection
+        // Configure and initialize RTCPeerConnection with ICE servers
         var config = GetDefaultConfiguration();
         peerConnection = new RTCPeerConnection(ref config);
 
@@ -73,14 +76,15 @@ public class UnityWebRTCClient : MonoBehaviour
         }
 
         // Send offer to signaling server
-        var offerJson = new JObject
+        var offerMessage = new WebRTCMessage
         {
-            ["type"] = desc.type.ToString().ToLower(),
-            ["sdp"] = desc.sdp
+            type = desc.type.ToString().ToLower(),
+            sdp = desc.sdp
         };
 
+        string jsonOffer = JsonUtility.ToJson(offerMessage);
         var request = new UnityWebRequest(ServerUrl + "/offer", "POST");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(offerJson.ToString());
+        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonOffer);
         request.uploadHandler = new UploadHandlerRaw(bodyRaw);
         request.downloadHandler = new DownloadHandlerBuffer();
         request.SetRequestHeader("Content-Type", "application/json");
@@ -94,13 +98,12 @@ public class UnityWebRTCClient : MonoBehaviour
         }
 
         // Parse and set remote description
-        var response = JObject.Parse(request.downloadHandler.text);
-        var sdp = response["sdp"].ToString();
+        var response = JsonUtility.FromJson<WebRTCMessage>(request.downloadHandler.text);
         var type = RTCSdpType.Answer;
         var remoteDesc = new RTCSessionDescription
         {
             type = type,
-            sdp = sdp
+            sdp = response.sdp
         };
 
         var opRemote = peerConnection.SetRemoteDescription(ref remoteDesc);
@@ -125,7 +128,13 @@ public class UnityWebRTCClient : MonoBehaviour
         RTCConfiguration config = default;
         config.iceServers = new[]
         {
-            new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } }
+            new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } },
+            new RTCIceServer 
+            { 
+                urls = new[] { "turn:YOUR_TURN_SERVER" },
+                username = "YOUR_USERNAME",
+                credential = "YOUR_PASSWORD"
+            }
         };
         return config;
     }
@@ -135,6 +144,7 @@ public class UnityWebRTCClient : MonoBehaviour
         if (videoStreamTrack != null)
         {
             videoStreamTrack.OnVideoReceived -= UpdateDisplayImage;
+            videoStreamTrack.Dispose();
         }
 
         if (peerConnection != null)
@@ -147,7 +157,10 @@ public class UnityWebRTCClient : MonoBehaviour
         {
             receiveStream.Dispose();
         }
+    }
 
-        WebRTC.Dispose();
+    private void OnApplicationQuit()
+    {
+        OnDestroy();
     }
 }
