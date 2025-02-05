@@ -13,6 +13,7 @@ public class WebRTCClient : MonoBehaviour
     
     private RTCPeerConnection peerConnection;
     private MediaStream videoStream;
+    private RenderTexture currentRenderTexture;
     private const string serverUrl = "https://34.133.108.164:8443";
     
     // 証明書検証をスキップするための設定
@@ -79,7 +80,27 @@ public class WebRTCClient : MonoBehaviour
                 var videoTrack = track as VideoStreamTrack;
                 videoTrack.OnVideoReceived += (Texture texture) =>
                 {
-                    displayImage.texture = texture;
+                    if (texture is Texture2D tex2D)
+                    {
+                        // 前のRenderTextureを解放
+                        if (currentRenderTexture != null)
+                        {
+                            currentRenderTexture.Release();
+                        }
+
+                        // 新しいRenderTextureを作成（RGBAフォーマットを明示的に指定）
+                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.ARGB32);
+                        currentRenderTexture.Create();
+
+                        // テクスチャを変換してRenderTextureに描画
+                        Graphics.Blit(tex2D, currentRenderTexture);
+                        displayImage.texture = currentRenderTexture;
+                    }
+                    else
+                    {
+                        displayImage.texture = texture;
+                    }
+                    displayImage.color = Color.white; // 不透明度を最大に設定
                 };
             }
         };
@@ -130,7 +151,6 @@ public class WebRTCClient : MonoBehaviour
         {
             // 証明書検証をスキップする設定を追加
             request.certificateHandler = new AcceptAllCertificatesSignedWithAnyPublicKey();
-        {
             byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonOffer);
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
@@ -177,6 +197,13 @@ public class WebRTCClient : MonoBehaviour
         {
             videoStream.Dispose();
             videoStream = null;
+        }
+
+        // RenderTextureのクリーンアップ
+        if (currentRenderTexture != null)
+        {
+            currentRenderTexture.Release();
+            currentRenderTexture = null;
         }
     }
 
