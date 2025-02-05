@@ -5,11 +5,71 @@ import ssl
 import mss
 import numpy as np
 import av
+from browser_use import BrowserCore
 from fractions import Fraction
 from aiohttp import web
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 
 ROOT = os.path.dirname(__file__)
+
+class BrowserController:
+    """Browser control using browser_use library."""
+    def __init__(self):
+        self.browser = BrowserCore()
+        self.browser.browser_init()
+        
+    async def start_browser(self):
+        """Start browser and navigate to a page."""
+        try:
+            # ブラウザを起動して特定のURLに移動
+            self.browser.browser_access("https://www.google.com")
+            print("Browser started successfully")
+            # ブラウザの初期設定
+            self.browser.wait_browser_complete()
+            return True
+        except Exception as e:
+            print(f"Error starting browser: {e}")
+            return False
+
+    def navigate_to(self, url):
+        """Navigate to specified URL."""
+        try:
+            self.browser.browser_access(url)
+            self.browser.wait_browser_complete()
+            print(f"Navigated to {url}")
+            return True
+        except Exception as e:
+            print(f"Error navigating to {url}: {e}")
+            return False
+
+    def click_element(self, selector):
+        """Click element matching selector."""
+        try:
+            self.browser.browser_click(selector)
+            self.browser.wait_browser_complete()
+            print(f"Clicked element: {selector}")
+            return True
+        except Exception as e:
+            print(f"Error clicking element {selector}: {e}")
+            return False
+
+    def enter_text(self, selector, text):
+        """Enter text into element matching selector."""
+        try:
+            self.browser.browser_send_keys(selector, text)
+            print(f"Entered text into {selector}")
+            return True
+        except Exception as e:
+            print(f"Error entering text into {selector}: {e}")
+            return False
+            
+    def cleanup(self):
+        """Clean up browser resources."""
+        try:
+            self.browser.browser_close()
+            print("Browser closed successfully")
+        except Exception as e:
+            print(f"Error closing browser: {e}")
 
 class ScreenCaptureTrack(MediaStreamTrack):
     """Media track for capturing the virtual display screen."""
@@ -87,11 +147,13 @@ async def on_shutdown(app):
     coros = [pc.close() for pc in pcs]
     await asyncio.gather(*coros)
     pcs.clear()
-
-if __name__ == "__main__":
-    import argparse
     
-    parser = argparse.ArgumentParser(description="WebRTC screen capture demo")
+    # cleanup browser if it exists
+    if hasattr(app, 'browser_controller'):
+        app['browser_controller'].cleanup()
+
+async def main():
+    parser = argparse.ArgumentParser(description="WebRTC screen capture demo with browser control")
     parser.add_argument("--cert-file", default="./server.crt", help="SSL certificate file (for HTTPS)")
     parser.add_argument("--key-file", default="./server.key", help="SSL key file (for HTTPS)")
     parser.add_argument("--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)")
@@ -116,4 +178,19 @@ if __name__ == "__main__":
     app.router.add_post("/offer", offer)
     
     print("Server running on https://34.133.108.164:8080")
-    web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_context)
+    # Initialize browser controller
+    browser_controller = BrowserController()
+    app['browser_controller'] = browser_controller
+    
+    # Start browser in background
+    success = await browser_controller.start_browser()
+    if not success:
+        print("Failed to start browser, exiting...")
+        return
+    
+    # Run the application
+    return await web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_context)
+
+if __name__ == "__main__":
+    import argparse
+    asyncio.run(main())
