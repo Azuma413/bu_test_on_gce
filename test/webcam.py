@@ -5,71 +5,52 @@ import ssl
 import mss
 import numpy as np
 import av
-from browser_use import BrowserCore
-from fractions import Fraction
 from aiohttp import web
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+from browser_use import Agent, Controller
+from browser_use.browser.browser import Browser, BrowserConfig
+from dotenv import load_dotenv
+from fractions import Fraction
+from langchain_openai import ChatOpenAI
+
+# Load environment variables
+load_dotenv()
 
 ROOT = os.path.dirname(__file__)
 
 class BrowserController:
-    """Browser control using browser_use library."""
     def __init__(self):
-        self.browser = BrowserCore()
-        self.browser.browser_init()
+        self.browser = None
         
+    def create_browser(self) -> Browser:
+        """Create browser instance."""
+        return Browser(
+            config=BrowserConfig(
+                headless=False,
+            )
+        )
+
     async def start_browser(self):
         """Start browser and navigate to a page."""
         try:
-            # ブラウザを起動して特定のURLに移動
-            self.browser.browser_access("https://www.google.com")
-            print("Browser started successfully")
-            # ブラウザの初期設定
-            self.browser.wait_browser_complete()
+            self.browser = self.create_browser()
+            model = ChatOpenAI(model='gpt-4')
+            agent = Agent(
+                task="Navigate to https://www.google.com",
+                llm=model,
+                controller=Controller(),
+                browser=self.browser,
+            )
+            await agent.run()
             return True
         except Exception as e:
             print(f"Error starting browser: {e}")
             return False
-
-    def navigate_to(self, url):
-        """Navigate to specified URL."""
-        try:
-            self.browser.browser_access(url)
-            self.browser.wait_browser_complete()
-            print(f"Navigated to {url}")
-            return True
-        except Exception as e:
-            print(f"Error navigating to {url}: {e}")
-            return False
-
-    def click_element(self, selector):
-        """Click element matching selector."""
-        try:
-            self.browser.browser_click(selector)
-            self.browser.wait_browser_complete()
-            print(f"Clicked element: {selector}")
-            return True
-        except Exception as e:
-            print(f"Error clicking element {selector}: {e}")
-            return False
-
-    def enter_text(self, selector, text):
-        """Enter text into element matching selector."""
-        try:
-            self.browser.browser_send_keys(selector, text)
-            print(f"Entered text into {selector}")
-            return True
-        except Exception as e:
-            print(f"Error entering text into {selector}: {e}")
-            return False
             
     def cleanup(self):
         """Clean up browser resources."""
-        try:
-            self.browser.browser_close()
-            print("Browser closed successfully")
-        except Exception as e:
-            print(f"Error closing browser: {e}")
+        if self.browser:
+            self.browser.quit()
 
 class ScreenCaptureTrack(MediaStreamTrack):
     """Media track for capturing the virtual display screen."""
