@@ -8,12 +8,13 @@ import mss
 import numpy as np
 import cv2
 from aiohttp import web
-from aiortc import MediaStreamTrack, RTCConfiguration, RTCPeerConnection, RTCSessionDescription, RTCRtpCodecParameters
+from aiortc import MediaStreamTrack, RTCConfiguration, RTCPeerConnection, RTCSessionDescription, RTCRtpCodecParameters, RTCIceCandidate
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+
 # Load environment variables
 load_dotenv()
 
@@ -62,7 +63,6 @@ class WebRTCServer:
         return Browser(
             config=BrowserConfig(
                 headless=False,
-                # chrome_instance_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
             )
         )
 
@@ -106,6 +106,7 @@ class WebRTCServer:
 
             @pc.on("connectionstatechange")
             async def on_connectionstatechange():
+                print(f"Connection state changed to: {pc.connectionState}")
                 if pc.connectionState == "failed":
                     await pc.close()
                     self.pcs.discard(pc)
@@ -134,6 +135,38 @@ class WebRTCServer:
                 text=json.dumps({"error": str(e)})
             )
 
+    async def candidate(self, request):
+        """Handle incoming ICE candidates."""
+        try:
+            params = await request.json()
+            candidate = RTCIceCandidate(
+                sdpMid=params["sdpMid"],
+                sdpMLineIndex=params["sdpMLineIndex"],
+                candidate=params["candidate"],
+            )
+            print(f"Received ICE candidate: {candidate.candidate}")
+            
+            # Find the associated peer connection
+            # In this simple example, we assume only one connection
+            if len(self.pcs) > 0:
+                pc = next(iter(self.pcs))
+                await pc.addIceCandidate(candidate)
+                print("Added ICE candidate successfully")
+            else:
+                print("No active peer connection to add ICE candidate to")
+            
+            return web.Response(
+                content_type="application/json",
+                text=json.dumps({"status": "ok"})
+            )
+        except Exception as e:
+            print(f"Error handling ICE candidate: {str(e)}")
+            return web.Response(
+                status=500,
+                content_type="application/json",
+                text=json.dumps({"error": str(e)})
+            )
+
     async def cleanup(self):
         """Cleanup resources."""
         # Close peer connections
@@ -152,7 +185,6 @@ async def main():
     # Setup web application
     app = web.Application()
     
-    # Setup CORS with more permissive settings
     # Setup CORS middleware
     @web.middleware
     async def cors_middleware(request, handler):
@@ -172,6 +204,7 @@ async def main():
     
     # Setup routes
     app.router.add_post("/offer", server.offer)
+    app.router.add_post("/candidate", server.candidate)  # Add route for ICE candidates
     
     # Add a basic handler for the root path
     async def index(request):

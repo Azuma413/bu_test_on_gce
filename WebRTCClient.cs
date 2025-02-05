@@ -19,7 +19,14 @@ public class WebRTCMessage
 {
     public string type;
     public string sdp;
-    public RTCConfiguration configuration;
+}
+
+[Serializable]
+public class IceCandidateMessage
+{
+    public string candidate;
+    public string sdpMid;
+    public int? sdpMLineIndex;
 }
 
 [Serializable]
@@ -74,9 +81,13 @@ public class WebRTCClient : MonoBehaviour
 
         // Get available codecs
         var codecs = RTCRtpSender.GetCapabilities(TrackKind.Video).codecs;
-        // Set codec preferences prioritizing VP8, then H264
-        transceiver.SetCodecPreferences(codecs);
-        Debug.Log($"Set codec preferences with {codecs.Length} available codecs");
+        // Set codec preferences to match the Python side's VP8
+        var vp8Codecs = Array.FindAll(codecs, codec => codec.mimeType.ToLower() == "video/vp8");
+        if (vp8Codecs.Length > 0)
+        {
+            transceiver.SetCodecPreferences(vp8Codecs);
+            Debug.Log("Set VP8 codec preference");
+        }
 
         // Setup event handlers
         peerConnection.OnTrack = (RTCTrackEvent e) =>
@@ -105,11 +116,11 @@ public class WebRTCClient : MonoBehaviour
             }
         };
 
-        peerConnection.IceConnectionState.ToString();  // This line is just to suppress the warning
-
         peerConnection.OnIceCandidate = candidate =>
         {
-            Debug.Log($"ICE candidate gathered: {candidate?.Candidate}");
+            if (candidate == null) return;
+            Debug.Log($"ICE candidate gathered: {candidate.Candidate}");
+            StartCoroutine(SendIceCandidateToServer(candidate));
         };
 
         peerConnection.OnIceGatheringStateChange = state =>
@@ -139,6 +150,33 @@ public class WebRTCClient : MonoBehaviour
         yield return StartCoroutine(SendOfferToServer(desc));
     }
 
+    private IEnumerator SendIceCandidateToServer(RTCIceCandidate candidate)
+    {
+        var message = new IceCandidateMessage
+        {
+            candidate = candidate.Candidate,
+            sdpMid = candidate.SdpMid,
+            sdpMLineIndex = candidate.SdpMLineIndex
+        };
+
+        string jsonCandidate = JsonUtility.ToJson(message);
+        using (var request = new UnityWebRequest(ServerUrl + "/candidate", "POST"))
+        {
+            byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonCandidate);
+            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+            request.certificateHandler = new BypassCertificate();
+
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"Failed to send ICE candidate: {request.error}");
+            }
+        }
+    }
+
     private IEnumerator SendOfferToServer(RTCSessionDescription desc)
     {
         Debug.Log("Preparing offer to send to server...");
@@ -148,14 +186,11 @@ public class WebRTCClient : MonoBehaviour
         var sdpType = desc.type.ToString().ToLower();
         Debug.Log($"Converted SDP type: {sdpType}");
 
-        var config = GetDefaultConfiguration();
         var offerMessage = new WebRTCMessage
         {
             type = sdpType,
-            sdp = desc.sdp,
-            configuration = config
+            sdp = desc.sdp
         };
-        Debug.Log($"Using ICE Configuration: {JsonUtility.ToJson(config)}");
 
         string jsonOffer = JsonUtility.ToJson(offerMessage);
         Debug.Log($"Serialized JSON offer: {jsonOffer}");
@@ -171,50 +206,50 @@ public class WebRTCClient : MonoBehaviour
 
             yield return request.SendWebRequest();
 
-        if (request.result != UnityWebRequest.Result.Success)
-        {
-            string errorMessage = $"Failed to send offer: {request.error}\nResponse Code: {request.responseCode}";
-            if (request.downloadHandler != null)
+            if (request.result != UnityWebRequest.Result.Success)
             {
-                errorMessage += $"\nResponse: {request.downloadHandler.text}";
-            }
-            Debug.LogError(errorMessage);
-            yield break;
-        }
-
-        WebRTCMessage response = null;
-        RTCSessionDescription remoteDesc = default;
-
-        try
-        {
-            Debug.Log("Received answer from server");
-            Debug.Log($"Response: {request.downloadHandler.text}");
-            
-            response = JsonUtility.FromJson<WebRTCMessage>(request.downloadHandler.text);
-            if (response == null)
-            {
-                throw new Exception("Failed to parse server response");
+                string errorMessage = $"Failed to send offer: {request.error}\nResponse Code: {request.responseCode}";
+                if (request.downloadHandler != null)
+                {
+                    errorMessage += $"\nResponse: {request.downloadHandler.text}";
+                }
+                Debug.LogError(errorMessage);
+                yield break;
             }
 
-            Debug.Log($"Answer SDP: {response.sdp}");
-            remoteDesc = new RTCSessionDescription
-            {
-                type = RTCSdpType.Answer,
-                sdp = response.sdp
-            };
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"Error processing server response: {ex.Message}");
-            AttemptReconnect();
-            yield break;
-        }
+            WebRTCMessage response = null;
+            RTCSessionDescription remoteDesc = default;
 
-        if (response != null)
-        {
-            Debug.Log("Setting remote description...");
-            yield return StartCoroutine(SetRemoteDescriptionCoroutine(remoteDesc));
-        }
+            try
+            {
+                Debug.Log("Received answer from server");
+                Debug.Log($"Response: {request.downloadHandler.text}");
+                
+                response = JsonUtility.FromJson<WebRTCMessage>(request.downloadHandler.text);
+                if (response == null)
+                {
+                    throw new Exception("Failed to parse server response");
+                }
+
+                Debug.Log($"Answer SDP: {response.sdp}");
+                remoteDesc = new RTCSessionDescription
+                {
+                    type = RTCSdpType.Answer,
+                    sdp = response.sdp
+                };
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error processing server response: {ex.Message}");
+                AttemptReconnect();
+                yield break;
+            }
+
+            if (response != null)
+            {
+                Debug.Log("Setting remote description...");
+                yield return StartCoroutine(SetRemoteDescriptionCoroutine(remoteDesc));
+            }
         }
     }
 
@@ -225,6 +260,7 @@ public class WebRTCClient : MonoBehaviour
         {
             Debug.Log($"Updating display image with texture: {texture.width}x{texture.height}");
             displayImage.texture = texture;
+            displayImage.enabled = true;
         }
         else if (displayImage == null)
         {
