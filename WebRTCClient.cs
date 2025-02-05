@@ -10,11 +10,11 @@ using System.Linq;
 public class WebRTCClient : MonoBehaviour
 {
     [SerializeField] private RawImage displayImage;
+    [SerializeField] private string serverUrl = "https://34.133.108.164:8443";
     
     private RTCPeerConnection peerConnection;
     private MediaStream videoStream;
     private RenderTexture currentRenderTexture;
-    private const string serverUrl = "https://34.133.108.164:8443";
     
     // 証明書検証をスキップするための設定
     class AcceptAllCertificatesSignedWithAnyPublicKey : CertificateHandler
@@ -88,8 +88,8 @@ public class WebRTCClient : MonoBehaviour
                             currentRenderTexture.Release();
                         }
 
-                        // 新しいRenderTextureを作成（RGBAフォーマットを明示的に指定）
-                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.ARGB32);
+                        // 新しいRenderTextureを作成（デフォルトRGBフォーマットを使用）
+                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.Default);
                         currentRenderTexture.Create();
 
                         // テクスチャを変換してRenderTextureに描画

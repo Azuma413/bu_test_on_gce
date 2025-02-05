@@ -142,11 +142,12 @@ class ScreenCaptureTrack(MediaStreamTrack):
 
             # Convert to format suitable for av
             img = np.array(screen)
-            # Convert BGRA to BGR by selecting first 3 channels
-            img = img[:, :, :3]
+            # Convert BGRA to RGB
+            img = img[:, :, :3]  # BGRA to BGR by selecting first 3 channels
+            img = img[:, :, ::-1]  # BGR to RGB by reversing the color channels
             
             # Create video frame
-            frame = av.VideoFrame.from_ndarray(img, format="bgr24")
+            frame = av.VideoFrame.from_ndarray(img, format="rgb24")
             pts, time_base = await self.next_timestamp()
             frame.pts = pts
             frame.time_base = time_base
