@@ -148,28 +148,27 @@ class WebRTCServer:
             candidate_str = params["candidate"]
             print(f"Parsing ICE candidate string: {candidate_str}")
             components = candidate_str.split()
-            
-            foundation = ""
-            component = 1
-            protocol = ""
-            priority = 0
-            ip = ""
-            port = 0
-            type = ""
-            
-            for i in range(len(components)):
-                if components[i] == "foundation":
-                    foundation = components[i+1]
-                elif components[i] == "protocol":
-                    protocol = components[i+1]
-                elif components[i] == "priority":
-                    priority = int(components[i+1])
-                elif components[i] == "ip":
-                    ip = components[i+1]
-                elif components[i] == "port":
-                    port = int(components[i+1])
-                elif components[i] == "typ":
-                    type = components[i+1]
+
+            # Format: candidate:foundation component protocol priority ip port typ type ...
+            try:
+                # Remove 'candidate:' prefix if present
+                if components[0].startswith("candidate:"):
+                    foundation = components[0].split(":")[1]
+                else:
+                    foundation = components[0]
+                
+                component = int(components[1])
+                protocol = components[2]
+                priority = int(components[3])
+                ip = components[4]
+                port = int(components[5])
+                
+                # Find type after 'typ'
+                type_index = components.index("typ")
+                type = components[type_index + 1]
+            except (IndexError, ValueError) as e:
+                print(f"Error parsing ICE candidate components: {e}")
+                raise
 
             print(f"Parsed ICE candidate components:")
             print(f"- foundation: {foundation}")
@@ -181,17 +180,21 @@ class WebRTCServer:
             print(f"- sdpMid: {params.get('sdpMid', '')}")
             print(f"- sdpMLineIndex: {sdp_mline_index}")
 
-            candidate = RTCIceCandidate(
-                foundation=foundation,
-                component=component,
-                protocol=protocol,
-                priority=priority,
-                ip=ip,
-                port=port,
-                type=type,
-                sdpMid=params.get("sdpMid", ""),
-                sdpMLineIndex=sdp_mline_index
-            )
+            # Create ICE candidate with the original candidate string
+            ice_candidate = {
+                "foundation": foundation,
+                "component": component,
+                "protocol": protocol,
+                "priority": priority,
+                "ip": ip,
+                "port": port,
+                "type": type,
+                "sdpMid": params.get("sdpMid", ""),
+                "sdpMLineIndex": sdp_mline_index,
+                "candidate": candidate_str  # Include the original candidate string
+            }
+            
+            candidate = RTCIceCandidate(**ice_candidate)
             print(f"Received ICE candidate: {candidate.candidate}")
             
             # Find the associated peer connection
