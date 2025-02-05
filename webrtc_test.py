@@ -197,17 +197,6 @@ async def offer(request):
     video = ScreenCaptureTrack()
     sender = pc.addTrack(video)
 
-    # Optimize video encoding parameters
-    params = sender.get_parameters()
-    params.encodings = [
-        RTCRtpEncodingParameters(
-            maxBitrate=2_500_000,  # 2.5 Mbps
-            maxFramerate=30,
-            scaleResolutionDownBy=1.0
-        )
-    ]
-    await sender.set_parameters(params)
-
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
