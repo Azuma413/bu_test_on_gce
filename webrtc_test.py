@@ -35,6 +35,33 @@ class BrowserController:
             )
         )
 
+    async def set_window_position_and_size(self, x: int, y: int, width: int, height: int):
+        """Set Chrome window position and size.
+        
+        Args:
+            x: Window x position
+            y: Window y position
+            width: Window width
+            height: Window height
+        """
+        try:
+            # 可視状態のChromeウィンドウを探す（一番最近のウィンドウを使用）
+            window_ids = os.popen("xdotool search --onlyvisible --name 'Chrome'").read().strip().split('\n')
+            if not window_ids:
+                print("Chrome window not found")
+                return False
+            
+            # 最後に作成されたウィンドウ（最新のウィンドウ）を使用
+            window_id = window_ids[-1]
+                
+            # ウィンドウのサイズと位置を設定
+            os.system(f'xdotool windowsize {window_id} {width} {height}')
+            os.system(f'xdotool windowmove {window_id} {x} {y}')
+            return True
+        except Exception as e:
+            print(f"Error setting window position and size: {e}")
+            return False
+
     async def start_browser(self):
         """Start browser and navigate to a page."""
         try:
@@ -49,6 +76,8 @@ class BrowserController:
             await agent.run()
             # Wait for the page to be fully loaded
             await asyncio.sleep(1)
+            # Set window position and size to 640x720 at (0,0)
+            await self.set_window_position_and_size(0, 0, 640, 720)
             return True
         except Exception as e:
             print(f"Error starting browser: {e}")
