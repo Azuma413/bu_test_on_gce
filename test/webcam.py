@@ -145,7 +145,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     args.play_from = "./強化学習.mp4"
-    args.port = 80
+    args.port = 8080
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
