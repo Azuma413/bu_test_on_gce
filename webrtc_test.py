@@ -144,9 +144,51 @@ class WebRTCServer:
             if sdp_mline_index is None:
                 sdp_mline_index = 0  # デフォルト値を設定
                 
-            # Fix: Pass candidate string as positional argument
+            # Parse the candidate string to extract required components
+            candidate_str = params["candidate"]
+            print(f"Parsing ICE candidate string: {candidate_str}")
+            components = candidate_str.split()
+            
+            foundation = ""
+            component = 1
+            protocol = ""
+            priority = 0
+            ip = ""
+            port = 0
+            type = ""
+            
+            for i in range(len(components)):
+                if components[i] == "foundation":
+                    foundation = components[i+1]
+                elif components[i] == "protocol":
+                    protocol = components[i+1]
+                elif components[i] == "priority":
+                    priority = int(components[i+1])
+                elif components[i] == "ip":
+                    ip = components[i+1]
+                elif components[i] == "port":
+                    port = int(components[i+1])
+                elif components[i] == "typ":
+                    type = components[i+1]
+
+            print(f"Parsed ICE candidate components:")
+            print(f"- foundation: {foundation}")
+            print(f"- protocol: {protocol}")
+            print(f"- priority: {priority}")
+            print(f"- ip: {ip}")
+            print(f"- port: {port}")
+            print(f"- type: {type}")
+            print(f"- sdpMid: {params.get('sdpMid', '')}")
+            print(f"- sdpMLineIndex: {sdp_mline_index}")
+
             candidate = RTCIceCandidate(
-                params["candidate"],
+                foundation=foundation,
+                component=component,
+                protocol=protocol,
+                priority=priority,
+                ip=ip,
+                port=port,
+                type=type,
                 sdpMid=params.get("sdpMid", ""),
                 sdpMLineIndex=sdp_mline_index
             )
