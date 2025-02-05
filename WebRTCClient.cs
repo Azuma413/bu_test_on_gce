@@ -152,11 +152,12 @@ public class WebRTCClient : MonoBehaviour
 
     private IEnumerator SendIceCandidateToServer(RTCIceCandidate candidate)
     {
+        // Nullチェックを追加
         var message = new IceCandidateMessage
         {
             candidate = candidate.Candidate,
-            sdpMid = candidate.SdpMid,
-            sdpMLineIndex = candidate.SdpMLineIndex
+            sdpMid = string.IsNullOrEmpty(candidate.SdpMid) ? "" : candidate.SdpMid,
+            sdpMLineIndex = candidate.SdpMLineIndex.HasValue ? candidate.SdpMLineIndex : 0
         };
 
         string jsonCandidate = JsonUtility.ToJson(message);

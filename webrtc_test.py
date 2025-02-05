@@ -139,9 +139,14 @@ class WebRTCServer:
         """Handle incoming ICE candidates."""
         try:
             params = await request.json()
+            # Nullチェックを追加
+            sdp_mline_index = params.get("sdpMLineIndex")
+            if sdp_mline_index is None:
+                sdp_mline_index = 0  # デフォルト値を設定
+                
             candidate = RTCIceCandidate(
-                sdpMid=params["sdpMid"],
-                sdpMLineIndex=params["sdpMLineIndex"],
+                sdpMid=params.get("sdpMid", ""),  # デフォルト値を空文字列に
+                sdpMLineIndex=sdp_mline_index,
                 candidate=params["candidate"],
             )
             print(f"Received ICE candidate: {candidate.candidate}")
