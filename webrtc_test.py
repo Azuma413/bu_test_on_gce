@@ -180,21 +180,18 @@ class WebRTCServer:
             print(f"- sdpMid: {params.get('sdpMid', '')}")
             print(f"- sdpMLineIndex: {sdp_mline_index}")
 
-            # Create ICE candidate with the original candidate string
-            ice_candidate = {
-                "foundation": foundation,
-                "component": component,
-                "protocol": protocol,
-                "priority": priority,
-                "ip": ip,
-                "port": port,
-                "type": type,
-                "sdpMid": params.get("sdpMid", ""),
-                "sdpMLineIndex": sdp_mline_index,
-                "candidate": candidate_str  # Include the original candidate string
-            }
-            
-            candidate = RTCIceCandidate(**ice_candidate)
+            # Create RTCIceCandidate with just the required parameters
+            candidate = RTCIceCandidate(
+                sdpMid=params.get("sdpMid", ""),
+                sdpMLineIndex=sdp_mline_index,
+                foundation=foundation,
+                component=component,
+                protocol=protocol,
+                priority=priority,
+                ip=ip,
+                port=port,
+                type=type
+            )
             print(f"Received ICE candidate: {candidate.candidate}")
             
             # Find the associated peer connection
