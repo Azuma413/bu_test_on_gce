@@ -144,10 +144,11 @@ class WebRTCServer:
             if sdp_mline_index is None:
                 sdp_mline_index = 0  # デフォルト値を設定
                 
+            # Fix: Pass candidate string as positional argument
             candidate = RTCIceCandidate(
-                sdpMid=params.get("sdpMid", ""),  # デフォルト値を空文字列に
-                sdpMLineIndex=sdp_mline_index,
-                candidate=params["candidate"],
+                params["candidate"],
+                sdpMid=params.get("sdpMid", ""),
+                sdpMLineIndex=sdp_mline_index
             )
             print(f"Received ICE candidate: {candidate.candidate}")
             
