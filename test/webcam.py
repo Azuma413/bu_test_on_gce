@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import ssl
+import time
 import mss
 import numpy as np
 import av
@@ -27,6 +28,8 @@ class BrowserController:
         return Browser(
             config=BrowserConfig(
                 headless=False,
+                window_size=(1280, 720),  # Set explicit window size
+                position=(0, 0)  # Position window at top-left
             )
         )
 
@@ -36,12 +39,14 @@ class BrowserController:
             self.browser = self.create_browser()
             model = ChatOpenAI(model='gpt-4o')
             agent = Agent(
-                task="Navigate to https://www.google.com",
+                task="Navigate to about:blank",  # Start with blank page
                 llm=model,
                 controller=Controller(),
                 browser=self.browser,
             )
             await agent.run()
+            # Wait for the page to be fully loaded
+            await asyncio.sleep(1)
             return True
         except Exception as e:
             print(f"Error starting browser: {e}")
@@ -59,10 +64,32 @@ class ScreenCaptureTrack(MediaStreamTrack):
     def __init__(self):
         super().__init__()
         self.sct = mss.mss()
-        self._monitor = {"top": 0, "left": 0, "width": 1280, "height": 720}
+        # Get all monitors
+        monitors = self.sct.monitors
+        print("Available monitors:", monitors)  # デバッグ用：全モニター情報を表示
+        
+        # モニターの選択ロジック改善
+        if len(monitors) > 1:
+            # モニター1（プライマリモニター）を使用
+            self._monitor = monitors[1]
+            print("Selected primary monitor:", self._monitor)
+        else:
+            # 単一モニターの場合
+            self._monitor = monitors[0]
+            print("Using single monitor:", self._monitor)
+            
+        # キャプチャ範囲を1280x720に制限
+        self._monitor = {
+            "left": self._monitor["left"],
+            "top": self._monitor["top"],
+            "width": 1280,
+            "height": 720
+        }
+        
         # フレームレートとタイムスタンプの管理用
         self._timestamp = 0
         self._frame_rate = 30
+        print("Final capture area:", self._monitor)  # デバッグ用：最終的なキャプチャ範囲
 
     async def next_timestamp(self):
         """タイムスタンプを生成"""
@@ -72,17 +99,31 @@ class ScreenCaptureTrack(MediaStreamTrack):
 
     async def recv(self):
         """Capture screen and return a video frame."""
-        screen = self.sct.grab(self._monitor)
-        # Convert to format suitable for av
-        img = np.array(screen)
-        # Convert BGRA to BGR by selecting first 3 channels
-        img = img[:, :, :3]
-        # Create video frame
-        frame = av.VideoFrame.from_ndarray(img, format="bgr24")
-        pts, time_base = await self.next_timestamp()
-        frame.pts = pts
-        frame.time_base = time_base
-        return frame
+        try:
+            screen = self.sct.grab(self._monitor)
+            # Print frame dimensions for debugging
+            if hasattr(self, '_last_print_time') and time.time() - self._last_print_time < 5:
+                pass  # Only print every 5 seconds
+            else:
+                print(f"Captured frame size: {screen.width}x{screen.height}")
+                print(f"RGB values at center: {screen.pixel(screen.width//2, screen.height//2)}")
+                self._last_print_time = time.time()
+
+            # Convert to format suitable for av
+            img = np.array(screen)
+            # Convert BGRA to BGR by selecting first 3 channels
+            img = img[:, :, :3]
+            
+            # Create video frame
+            frame = av.VideoFrame.from_ndarray(img, format="bgr24")
+            pts, time_base = await self.next_timestamp()
+            frame.pts = pts
+            frame.time_base = time_base
+            return frame
+            
+        except Exception as e:
+            print(f"Error capturing frame: {e}")
+            raise
 
 async def index(request):
     content = open(os.path.join(ROOT, "index.html"), "r").read()
