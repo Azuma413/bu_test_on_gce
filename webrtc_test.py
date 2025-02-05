@@ -1,12 +1,14 @@
 import asyncio
 import json
 import ssl
+import time
 from typing import Optional
 import av
 import mss
 import numpy as np
+import cv2
 from aiohttp import web
-from aiortc import MediaStreamTrack, RTCConfiguration, RTCPeerConnection, RTCSessionDescription
+from aiortc import MediaStreamTrack, RTCConfiguration, RTCPeerConnection, RTCSessionDescription, RTCRtpCodecParameters
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig
@@ -23,17 +25,31 @@ class ScreenCaptureTrack(MediaStreamTrack):
         super().__init__()
         self.sct = mss.mss()
         self._monitor = {"top": 0, "left": 0, "width": 1280, "height": 720}
+        self._last_frame_time = 0
+        self._frame_interval = 1/30  # 30 FPS
 
     async def recv(self):
         """Capture screen and return a video frame."""
+        # フレームレート制御
+        current_time = time.time()
+        if current_time - self._last_frame_time < self._frame_interval:
+            await asyncio.sleep(self._frame_interval - (current_time - self._last_frame_time))
+        
         screen = self.sct.grab(self._monitor)
-        # Convert to format suitable for av
         img = np.array(screen)
-        # Create video frame
-        frame = av.VideoFrame.from_ndarray(img, format="bgr24")
+        
+        # BGRAからRGBに変換（Unity側はRGBを期待している）
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+        
+        # フレーム生成時にRGBフォーマットを明示的に指定
+        frame = av.VideoFrame.from_ndarray(img, format='rgb24')
+        frame.width = 1280
+        frame.height = 720
+        
         pts, time_base = await self.next_timestamp()
         frame.pts = pts
         frame.time_base = time_base
+        self._last_frame_time = time.time()
         return frame
 
 class WebRTCServer:
@@ -84,9 +100,16 @@ class WebRTCServer:
                     await pc.close()
                     self.pcs.discard(pc)
 
-            # Create screen capture track
+            # Create screen capture track and set codec preferences
             video = ScreenCaptureTrack()
-            pc.addTrack(video)
+            transceiver = pc.addTransceiver(video, direction="sendonly")
+            transceiver.setCodecPreferences([
+                RTCRtpCodecParameters(
+                    mimeType="video/H264",
+                    clockRate=90000,
+                    parameters={"packetization-mode": "1", "profile-level-id": "42e01f"}
+                )
+            ])
 
             # Handle the offer
             await pc.setRemoteDescription(offer)
