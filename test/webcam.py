@@ -144,6 +144,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.cert_file = "./server.crt"
+    args.key_file = "./server.key"
     args.play_from = "./強化学習.mp4"
     args.port = 8080
 
@@ -163,4 +165,5 @@ if __name__ == "__main__":
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
+    print("https://34.133.108.164:8080")
     web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_context)
