@@ -89,7 +89,7 @@ public class WebRTCClient : MonoBehaviour
                         }
 
                         // RenderTextureをRGBA32フォーマットで作成
-                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.RGBA32);
+                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.ARGB32);
                         currentRenderTexture.Create();
 
                         // テクスチャを変換してRenderTextureに描画
