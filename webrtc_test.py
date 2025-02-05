@@ -69,45 +69,20 @@ class WebRTCServer:
             offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
             print(f"Received offer with type: {params['type']}")
 
-            # Configure WebRTC with STUN and TURN servers
+            # Configure WebRTC with STUN server
             configuration = RTCConfiguration(
                 iceServers=[
-                    {"urls": ["stun:stun.l.google.com:19302"]},
-                    {
-                        "urls": [
-                            "turn:34.133.108.164:3478?transport=udp",
-                            "turn:34.133.108.164:3478?transport=tcp"
-                        ],
-                        "username": "webrtc",
-                        "credential": "webrtc"
-                    }
-                ],
-                iceCandidatePoolSize=10,
-                bundlePolicy="max-bundle",
-                rtcpMuxPolicy="require"
+                    {"urls": ["stun:stun.l.google.com:19302"]}
+                ]
             )
             pc = RTCPeerConnection(configuration=configuration)
             self.pcs.add(pc)
 
             @pc.on("connectionstatechange")
             async def on_connectionstatechange():
-                print(f"Connection state changed to: {pc.connectionState}")
                 if pc.connectionState == "failed":
-                    print("Connection failed - ICE connectivity check failed")
                     await pc.close()
                     self.pcs.discard(pc)
-                elif pc.connectionState == "connected":
-                    print("Connection established successfully")
-                elif pc.connectionState == "disconnected":
-                    print("Connection disconnected")
-
-            @pc.on("iceconnectionstatechange")
-            async def on_iceconnectionstatechange():
-                print(f"ICE connection state changed to: {pc.iceConnectionState}")
-
-            @pc.on("icegatheringstatechange")
-            async def on_icegatheringstatechange():
-                print(f"ICE gathering state changed to: {pc.iceGatheringState}")
 
             # Create screen capture track
             video = ScreenCaptureTrack()
@@ -115,13 +90,8 @@ class WebRTCServer:
 
             # Handle the offer
             await pc.setRemoteDescription(offer)
-            print("Remote description set successfully")
-            
             answer = await pc.createAnswer()
-            print("Answer created successfully")
-            
             await pc.setLocalDescription(answer)
-            print("Local description set successfully")
 
             return web.Response(
                 content_type="application/json",

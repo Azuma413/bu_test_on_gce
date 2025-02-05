@@ -29,49 +29,14 @@ public class WebRTCClient : MonoBehaviour
     private RTCDataChannel dataChannel;
     [SerializeField] private string ServerUrl = "https://34.133.108.164:8443";
     private VideoStreamTrack videoStreamTrack;
-    private const int MaxRetries = 3;
-    private const float RetryDelay = 5f;
     private bool isDisposed = false;
 
     private void Start()
     {
-        StartCoroutine(SetupWebRTCWithRetry());
+        StartCoroutine(SetupWebRTC());
     }
 
-    private IEnumerator SetupWebRTCWithRetry()
-    {
-        int retryCount = 0;
-        bool connected = false;
-
-        while (!connected && retryCount < MaxRetries)
-        {
-            if (retryCount > 0)
-            {
-                Debug.Log($"Retrying WebRTC connection (Attempt {retryCount + 1}/{MaxRetries})");
-                yield return new WaitForSeconds(RetryDelay);
-            }
-
-            bool setupResult = false;
-            yield return StartCoroutine(SetupWebRTC((success) => setupResult = success));
-            
-            if (setupResult)
-            {
-                connected = true;
-            }
-            else
-            {
-                CleanupResources();
-                retryCount++;
-            }
-        }
-
-        if (!connected)
-        {
-            Debug.LogError("Failed to establish WebRTC connection after maximum retries");
-        }
-    }
-
-    private IEnumerator SetupWebRTC(Action<bool> callback)
+    private IEnumerator SetupWebRTC()
     {
         // Configure and initialize RTCPeerConnection with ICE servers
         var config = GetDefaultConfiguration();
@@ -91,58 +56,27 @@ public class WebRTCClient : MonoBehaviour
 
         peerConnection.OnConnectionStateChange = state =>
         {
-            Debug.Log($"Connection State Changed to: {state}");
             if (state == RTCPeerConnectionState.Failed)
             {
-                Debug.LogError("Connection failed - ICE connectivity check failed");
-            }
-            else if (state == RTCPeerConnectionState.Disconnected)
-            {
-                Debug.LogWarning("Connection disconnected - ICE connection was interrupted");
-            }
-            else if (state == RTCPeerConnectionState.Connected)
-            {
-                Debug.Log("Connection established successfully - ICE connection is active");
+                Debug.LogError("Connection failed");
+                CleanupResources();
             }
         };
 
-        peerConnection.OnIceCandidate = candidate =>
-        {
-            Debug.Log($"ICE Candidate: {candidate.Candidate}, Type: {candidate.Type}, Protocol: {candidate.Protocol}");
-        };
-
-        peerConnection.OnDataChannel = channel =>
-        {
-            dataChannel = channel;
-            Debug.Log("Data channel created");
-        };
+        peerConnection.OnDataChannel = channel => dataChannel = channel;
 
         // Create and send offer
         var op = peerConnection.CreateOffer();
         yield return op;
 
-        if (op.IsError)
-        {
-            Debug.LogError($"Create Offer Error: {op.Error.message}");
-            callback(false);
-            yield break;
-        }
-
         var desc = op.Desc;
         var opLocal = peerConnection.SetLocalDescription(ref desc);
         yield return opLocal;
 
-        if (opLocal.IsError)
-        {
-            Debug.LogError($"Set Local Description Error: {opLocal.Error.message}");
-            callback(false);
-            yield break;
-        }
-
-        yield return StartCoroutine(SendOfferToServer(desc, callback));
+        yield return StartCoroutine(SendOfferToServer(desc));
     }
 
-    private IEnumerator SendOfferToServer(RTCSessionDescription desc, Action<bool> callback)
+    private IEnumerator SendOfferToServer(RTCSessionDescription desc)
     {
         var offerMessage = new WebRTCMessage
         {
@@ -162,44 +96,19 @@ public class WebRTCClient : MonoBehaviour
 
             yield return request.SendWebRequest();
 
-            if (request.result != UnityWebRequest.Result.Success)
+            if (request.result == UnityWebRequest.Result.Success)
             {
-                Debug.LogError($"Server Error: {request.error}");
-                callback(false);
-                yield break;
+                WebRTCMessage response = JsonUtility.FromJson<WebRTCMessage>(request.downloadHandler.text);
+
+                var type = RTCSdpType.Answer;
+                var remoteDesc = new RTCSessionDescription
+                {
+                    type = type,
+                    sdp = response.sdp
+                };
+
+                yield return peerConnection.SetRemoteDescription(ref remoteDesc);
             }
-
-            WebRTCMessage response;
-            try
-            {
-                response = JsonUtility.FromJson<WebRTCMessage>(request.downloadHandler.text);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"Error parsing server response: {ex}");
-                callback(false);
-                yield break;
-            }
-
-            var type = RTCSdpType.Answer;
-            var remoteDesc = new RTCSessionDescription
-            {
-                type = type,
-                sdp = response.sdp
-            };
-
-            var opRemote = peerConnection.SetRemoteDescription(ref remoteDesc);
-            yield return opRemote;
-
-            if (opRemote.IsError)
-            {
-                Debug.LogError($"Set Remote Description Error: {opRemote.Error.message}");
-                callback(false);
-                yield break;
-            }
-
-            Debug.Log("WebRTC connection established successfully");
-            callback(true);
         }
     }
 
@@ -218,27 +127,14 @@ public class WebRTCClient : MonoBehaviour
 
     private RTCConfiguration GetDefaultConfiguration()
     {
-        RTCConfiguration config = default;
-        config.iceServers = new[]
+        return new RTCConfiguration
         {
-            new RTCIceServer { 
-                urls = new[] { 
-                    "stun:stun.l.google.com:19302",
-                    "stun:stun1.l.google.com:19302",
-                    "stun:stun2.l.google.com:19302",
-                    "stun:stun3.l.google.com:19302",
-                    "stun:stun4.l.google.com:19302"
+            iceServers = new[] {
+                new RTCIceServer { 
+                    urls = new[] { "stun:stun.l.google.com:19302" }
                 }
-            },
-            // Add TURN servers for better connectivity
-            new RTCIceServer {
-                urls = new[] { "turn:turn.webrtc.org:3478" },
-                username = "webrtc",
-                credential = "webrtc"
             }
         };
-        config.iceTransportPolicy = RTCIceTransportPolicy.All;
-        return config;
     }
 
     private void CleanupResources()
