@@ -170,8 +170,22 @@ async def main():
         return
     
     # Run the application
-    return await web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_context)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host=args.host, port=args.port, ssl_context=ssl_context)
+    await site.start()
+    
+    # Keep the server running
+    try:
+        await asyncio.Event().wait()  # run forever
+    finally:
+        await runner.cleanup()
 
 if __name__ == "__main__":
     import argparse
-    asyncio.run(main())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main())
+    finally:
+        loop.close()
