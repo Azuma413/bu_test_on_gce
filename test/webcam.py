@@ -28,6 +28,7 @@ class BrowserController:
         return Browser(
             config=BrowserConfig(
                 headless=False,
+                chrome_instance_path="/usr/bin/google-chrome"
                 # new_context_config=BrowserContextConfig(
                 #     browser_window_size=lambda: {"width": 1280, "height": 720},  # Set explicit window size
                 # )

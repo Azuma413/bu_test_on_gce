@@ -38,26 +38,7 @@ uv run playwright install
 uv run playwright install-deps
 ```
 ```bash
-sudo apt install coturn -y
-sudo nano /etc/turnserver.conf
-```
-```
-listening-port=3478
-listening-ip=0.0.0.0
-relay-ip=0.0.0.0
-external-ip=<GCEのパブリックIP>
-fingerprint
-lt-cred-mech
-use-auth-secret
-static-auth-secret=webrtc
-realm=gce-turn
-total-quota=100
-bps-capacity=0
-stale-nonce
-```
-```bash
-sudo systemctl enable coturn
-sudo systemctl restart coturn
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 ```
 
 2. Unity側のセットアップ:
