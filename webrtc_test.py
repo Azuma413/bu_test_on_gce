@@ -132,21 +132,17 @@ class ScreenCaptureTrack(MediaStreamTrack):
     async def recv(self):
         """Capture screen and return a video frame."""
         try:
-            screen = self.sct.grab(self._monitor)
+            screen = self.sct.grab(self._monitor) # RGBA 32bit
             # Print frame dimensions for debugging
             if hasattr(self, '_last_print_time') and time.time() - self._last_print_time < 5:
                 pass  # Only print every 5 seconds
             else:
                 print(f"Captured frame size: {screen.width}x{screen.height}")
-                print(f"RGB values at center: {screen.pixel(screen.width//2, screen.height//2)}")
+                print(f"RGB values at center: {screen.pixel(screen.width//2, screen.height//2)}") # RGB
                 self._last_print_time = time.time()
 
             # Convert to format suitable for av
-            img = np.array(screen)
-            # Convert BGRA to ARGB (Unity's format)
-            img = img[:, :, [2, 1, 0, 3]]  # BGRA to ARGB by reordering channels
-            
-            # Create video frame (using RGB32 format which includes alpha)
+            img = np.array(screen) # RGBA
             frame = av.VideoFrame.from_ndarray(img, format="rgba")
             pts, time_base = await self.next_timestamp()
             frame.pts = pts

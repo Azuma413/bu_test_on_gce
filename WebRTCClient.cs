@@ -42,12 +42,7 @@ public class WebRTCClient : MonoBehaviour
         var configuration = new RTCConfiguration
         {
             iceServers = new[] { 
-                new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } },
-                new RTCIceServer {
-                    urls = new[] { "turn:turn.example.com:3478" }, // 必要に応じてTURNサーバーを追加
-                    username = "username",
-                    credential = "password"
-                }
+                new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } }
             }
         };
 
@@ -76,12 +71,19 @@ public class WebRTCClient : MonoBehaviour
         {
             if (e.Track is MediaStreamTrack track && track.Kind == TrackKind.Video)
             {
-                videoStream = e.Streams.First();
+                videoStream = e.Streams.First(); // VideoStreamを取得
                 var videoTrack = track as VideoStreamTrack;
+                // VideoStreamTrackのイベントハンドラを設定
                 videoTrack.OnVideoReceived += (Texture texture) =>
                 {
                     if (texture is Texture2D tex2D)
                     {
+                        // デバッグのためにテクスチャに含まれるピクセルの平均と分散を計算
+                        var pixels = ((Texture2D)texture).GetPixels();
+                        var avg = pixels.Average(p => p.grayscale);
+                        var variance = pixels.Average(p => (p.grayscale - avg) * (p.grayscale - avg));
+                        Debug.Log($"Average: {avg}, Variance: {variance}");
+
                         // 前のRenderTextureを解放
                         if (currentRenderTexture != null)
                         {
@@ -89,15 +91,25 @@ public class WebRTCClient : MonoBehaviour
                         }
 
                         // RenderTextureをRGBA32フォーマットで作成
-                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.ARGB32);
+                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.RGBA32);
                         currentRenderTexture.Create();
 
                         // テクスチャを変換してRenderTextureに描画
                         Graphics.Blit(tex2D, currentRenderTexture);
+                        
+                        // currentRenderTextureの平均と分散を計算
+                        var rtPixels = new Color[currentRenderTexture.width * currentRenderTexture.height];
+                        RenderTexture.active = currentRenderTexture;
+                        rtPixels = currentRenderTexture.GetPixels();
+                        var rtAvg = rtPixels.Average(p => p.grayscale);
+                        var rtVariance = rtPixels.Average(p => (p.grayscale - rtAvg) * (p.grayscale - rtAvg));
+                        Debug.Log($"RT Average: {rtAvg}, RT Variance: {rtVariance}");
+
                         displayImage.texture = currentRenderTexture;
                     }
                     else
                     {
+                        Debug.LogWarning("Texture is not Texture2D");
                         displayImage.texture = texture;
                     }
                     displayImage.color = Color.white; // 不透明度を最大に設定
