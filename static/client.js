@@ -2,6 +2,7 @@ var pc = null;
 
 function negotiate() {
     pc.addTransceiver('video', { direction: 'recvonly' });
+    pc.addTransceiver('audio', { direction: 'recvonly' });
     return pc.createOffer().then((offer) => {
         return pc.setLocalDescription(offer);
     }).then(() => {
@@ -41,17 +42,22 @@ function negotiate() {
 }
 
 function start() {
-    const config = {
-        sdpSemantics: 'unified-plan',
-        iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }]
+    var config = {
+        sdpSemantics: 'unified-plan'
     };
+
+    if (document.getElementById('use-stun').checked) {
+        config.iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
+    }
 
     pc = new RTCPeerConnection(config);
 
-    // connect video
+    // connect audio / video
     pc.addEventListener('track', (evt) => {
         if (evt.track.kind == 'video') {
             document.getElementById('video').srcObject = evt.streams[0];
+        } else {
+            document.getElementById('audio').srcObject = evt.streams[0];
         }
     });
 
