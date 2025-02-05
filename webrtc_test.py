@@ -110,16 +110,9 @@ class WebRTCServer:
                     await pc.close()
                     self.pcs.discard(pc)
 
-            # Create screen capture track and set codec preferences
+            # Create screen capture track without forcing specific codec
             video = ScreenCaptureTrack()
-            transceiver = pc.addTransceiver(video, direction="sendonly")
-            transceiver.setCodecPreferences([
-                RTCRtpCodecParameters(
-                    mimeType="video/H264",
-                    clockRate=90000,
-                    parameters={"packetization-mode": "1", "profile-level-id": "42e01f"}
-                )
-            ])
+            pc.addTrack(video)
 
             # Handle the offer
             await pc.setRemoteDescription(offer)

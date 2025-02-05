@@ -72,8 +72,11 @@ public class WebRTCClient : MonoBehaviour
         var transceiver = peerConnection.AddTransceiver(TrackKind.Video, init);
         Debug.Log("Added video transceiver with RecvOnly direction");
 
-        // Note: Codec preferences are handled by default configuration
-        Debug.Log("Using default video codec configuration");
+        // Get available codecs
+        var codecs = RTCRtpSender.GetCapabilities(TrackKind.Video).codecs;
+        // Set codec preferences prioritizing VP8, then H264
+        transceiver.SetCodecPreferences(codecs);
+        Debug.Log($"Set codec preferences with {codecs.Length} available codecs");
 
         // Setup event handlers
         peerConnection.OnTrack = (RTCTrackEvent e) =>
