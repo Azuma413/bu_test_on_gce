@@ -21,13 +21,12 @@ class ScreenCaptureTrack(MediaStreamTrack):
         # フレームレートとタイムスタンプの管理用
         self._timestamp = 0
         self._frame_rate = 30
-        self._time_base = 1 / self._frame_rate
 
     async def next_timestamp(self):
         """タイムスタンプを生成"""
         pts = self._timestamp
         self._timestamp += 1
-        return pts, self._time_base
+        return pts, av.Rational(1, self._frame_rate)
 
     async def recv(self):
         """Capture screen and return a video frame."""
