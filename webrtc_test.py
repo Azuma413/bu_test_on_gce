@@ -144,55 +144,22 @@ class WebRTCServer:
             if sdp_mline_index is None:
                 sdp_mline_index = 0  # デフォルト値を設定
                 
-            # Parse the candidate string to extract required components
+            # Get candidate data
             candidate_str = params["candidate"]
-            print(f"Parsing ICE candidate string: {candidate_str}")
-            components = candidate_str.split()
+            if not candidate_str.startswith("candidate:"):
+                candidate_str = "candidate:" + candidate_str
 
-            # Format: candidate:foundation component protocol priority ip port typ type ...
-            try:
-                # Remove 'candidate:' prefix if present
-                if components[0].startswith("candidate:"):
-                    foundation = components[0].split(":")[1]
-                else:
-                    foundation = components[0]
-                
-                component = int(components[1])
-                protocol = components[2]
-                priority = int(components[3])
-                ip = components[4]
-                port = int(components[5])
-                
-                # Find type after 'typ'
-                type_index = components.index("typ")
-                type = components[type_index + 1]
-            except (IndexError, ValueError) as e:
-                print(f"Error parsing ICE candidate components: {e}")
-                raise
+            print(f"Received ICE candidate string: {candidate_str}")
+            print(f"sdpMid: {params.get('sdpMid', '')}")
+            print(f"sdpMLineIndex: {sdp_mline_index}")
 
-            print(f"Parsed ICE candidate components:")
-            print(f"- foundation: {foundation}")
-            print(f"- protocol: {protocol}")
-            print(f"- priority: {priority}")
-            print(f"- ip: {ip}")
-            print(f"- port: {port}")
-            print(f"- type: {type}")
-            print(f"- sdpMid: {params.get('sdpMid', '')}")
-            print(f"- sdpMLineIndex: {sdp_mline_index}")
-
-            # Create RTCIceCandidate with just the required parameters
+            # Create RTCIceCandidate ensuring proper format
             candidate = RTCIceCandidate(
                 sdpMid=params.get("sdpMid", ""),
                 sdpMLineIndex=sdp_mline_index,
-                foundation=foundation,
-                component=component,
-                protocol=protocol,
-                priority=priority,
-                ip=ip,
-                port=port,
-                type=type
+                candidate=candidate_str
             )
-            print(f"Received ICE candidate: {candidate.candidate}")
+            print(f"Created ICE candidate with: {candidate_str}")
             
             # Find the associated peer connection
             # In this simple example, we assume only one connection
