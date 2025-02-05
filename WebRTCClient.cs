@@ -19,6 +19,13 @@ public class WebRTCMessage
 {
     public string type;
     public string sdp;
+    public RTCConfiguration configuration;
+}
+
+[Serializable]
+public class RTCIceServerJson
+{
+    public string[] urls;
 }
 
 public class WebRTCClient : MonoBehaviour
@@ -131,16 +138,24 @@ public class WebRTCClient : MonoBehaviour
 
     private IEnumerator SendOfferToServer(RTCSessionDescription desc)
     {
-        Debug.Log("Sending offer to server...");
+        Debug.Log("Preparing offer to send to server...");
+        Debug.Log($"Offer type: {desc.type}");
         Debug.Log($"Offer SDP: {desc.sdp}");
 
+        var sdpType = desc.type.ToString().ToLower();
+        Debug.Log($"Converted SDP type: {sdpType}");
+
+        var config = GetDefaultConfiguration();
         var offerMessage = new WebRTCMessage
         {
-            type = desc.type.ToString().ToLower(),
-            sdp = desc.sdp
+            type = sdpType,
+            sdp = desc.sdp,
+            configuration = config
         };
+        Debug.Log($"Using ICE Configuration: {JsonUtility.ToJson(config)}");
 
         string jsonOffer = JsonUtility.ToJson(offerMessage);
+        Debug.Log($"Serialized JSON offer: {jsonOffer}");
         Debug.Log($"Sending offer to: {ServerUrl}/offer");
         using (var request = new UnityWebRequest(ServerUrl + "/offer", "POST"))
         {
@@ -224,13 +239,7 @@ public class WebRTCClient : MonoBehaviour
         {
             iceServers = new[] {
                 new RTCIceServer { 
-                    urls = new[] { 
-                        "stun:stun.l.google.com:19302",
-                        "stun:stun1.l.google.com:19302",
-                        "stun:stun2.l.google.com:19302",
-                        "stun:stun3.l.google.com:19302",
-                        "stun:stun4.l.google.com:19302"
-                    }
+                    urls = new[] { "stun:stun.l.google.com:19302" }
                 }
             }
         };

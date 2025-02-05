@@ -82,15 +82,27 @@ class WebRTCServer:
         """Handle WebRTC offer from client."""
         try:
             params = await request.json()
-            offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
-            print(f"Received offer with type: {params['type']}")
+            print(f"Received offer params: {json.dumps(params, indent=2)}")
+            print(f"Parsing SDP offer content: {params['sdp'][:100]}...")  # Show first 100 chars
+            
+            try:
+                offer = RTCSessionDescription(
+                    sdp=params["sdp"],
+                    type=params["type"].lower()  # Ensure type is lowercase
+                )
+                print(f"Created RTCSessionDescription successfully")
+                print(f"Offer type: {offer.type}, SDP length: {len(offer.sdp)}")
+            except Exception as e:
+                print(f"Error creating RTCSessionDescription: {str(e)}")
+                print(f"Received params type: {type(params['type'])}")
+                print(f"Received params sdp type: {type(params['sdp'])}")
+                raise
 
-            # Configure WebRTC with STUN server
-            configuration = RTCConfiguration([
-                {"urls": ["stun:stun.l.google.com:19302"]}
-            ])
-            pc = RTCPeerConnection(configuration=configuration)
+            # Configure WebRTC
+            pc = RTCPeerConnection()
+            print("Created RTCPeerConnection successfully")
             self.pcs.add(pc)
+            print("Added peer connection to set")
 
             @pc.on("connectionstatechange")
             async def on_connectionstatechange():
