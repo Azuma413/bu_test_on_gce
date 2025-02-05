@@ -34,7 +34,7 @@ class BrowserController:
         """Start browser and navigate to a page."""
         try:
             self.browser = self.create_browser()
-            model = ChatOpenAI(model='gpt-4')
+            model = ChatOpenAI(model='gpt-4o')
             agent = Agent(
                 task="Navigate to https://www.google.com",
                 llm=model,
