@@ -5,6 +5,7 @@ import ssl
 import mss
 import numpy as np
 import av
+from fractions import Fraction
 from aiohttp import web
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 
@@ -26,7 +27,7 @@ class ScreenCaptureTrack(MediaStreamTrack):
         """タイムスタンプを生成"""
         pts = self._timestamp
         self._timestamp += 1
-        return pts, av.Rational(1, self._frame_rate)
+        return pts, Fraction(1, self._frame_rate)
 
     async def recv(self):
         """Capture screen and return a video frame."""
