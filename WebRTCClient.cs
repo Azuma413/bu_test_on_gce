@@ -15,8 +15,19 @@ public class WebRTCClient : MonoBehaviour
     private MediaStream videoStream;
     private const string serverUrl = "https://34.133.108.164:8443";
     
+    // 証明書検証をスキップするための設定
+    class AcceptAllCertificatesSignedWithAnyPublicKey : CertificateHandler
+    {
+        protected override bool ValidateCertificate(byte[] certificateData)
+        {
+            return true;
+        }
+    }
+    
     void Start()
     {
+        // SSL/TLS証明書の検証をスキップ
+        Debug.Log("Starting WebRTC connection...");
         StartConnection();
     }
 
@@ -29,10 +40,35 @@ public class WebRTCClient : MonoBehaviour
     {
         var configuration = new RTCConfiguration
         {
-            iceServers = new[] { new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } } }
+            iceServers = new[] { 
+                new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } },
+                new RTCIceServer {
+                    urls = new[] { "turn:turn.example.com:3478" }, // 必要に応じてTURNサーバーを追加
+                    username = "username",
+                    credential = "password"
+                }
+            }
         };
 
         peerConnection = new RTCPeerConnection(ref configuration);
+        
+        // ICE candidate イベントハンドラの設定
+        peerConnection.OnIceCandidate = candidate =>
+        {
+            if (candidate == null) return;
+            Debug.Log($"OnIceCandidate: {candidate.Candidate}");
+            // ICE candidateの送信処理を必要に応じて実装
+        };
+        
+        peerConnection.OnIceConnectionChange = state =>
+        {
+            Debug.Log($"ICE Connection State: {state}");
+        };
+
+        peerConnection.OnConnectionStateChange = state =>
+        {
+            Debug.Log($"Connection State: {state}");
+        };
 
         // Set up event handlers
         peerConnection.OnTrack = (RTCTrackEvent e) =>
@@ -91,6 +127,9 @@ public class WebRTCClient : MonoBehaviour
         });
 
         using (var request = new UnityWebRequest($"{serverUrl}/offer", "POST"))
+        {
+            // 証明書検証をスキップする設定を追加
+            request.certificateHandler = new AcceptAllCertificatesSignedWithAnyPublicKey();
         {
             byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonOffer);
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);

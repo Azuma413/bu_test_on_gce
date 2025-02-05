@@ -173,6 +173,7 @@ async def offer(request):
     pc = RTCPeerConnection()
     pcs.add(pc)
 
+    # Connection state monitoring
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
         print("Connection state is %s" % pc.connectionState)
@@ -180,9 +181,32 @@ async def offer(request):
             await pc.close()
             pcs.discard(pc)
 
-    # Add screen capture track
+    # ICE connection state monitoring
+    @pc.on("iceconnectionstatechange")
+    async def on_iceconnectionstatechange():
+        print("ICE connection state is %s" % pc.iceConnectionState)
+
+    # Data channel for optional messaging
+    @pc.on("datachannel")
+    def on_datachannel(channel):
+        @channel.on("message")
+        def on_message(message):
+            print("Received message:", message)
+
+    # Add screen capture track with optimized settings
     video = ScreenCaptureTrack()
-    pc.addTrack(video)
+    sender = pc.addTrack(video)
+
+    # Optimize video encoding parameters
+    params = sender.getParameters()
+    params.encodings = [
+        RTCRtpEncodingParameters(
+            maxBitrate=2_500_000,  # 2.5 Mbps
+            maxFramerate=30,
+            scaleResolutionDownBy=1.0
+        )
+    ]
+    await sender.setParameters(params)
 
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
@@ -196,6 +220,7 @@ async def offer(request):
     )
 
 async def on_shutdown(app):
+    print("Cleaning up connections and resources...")
     # close peer connections
     coros = [pc.close() for pc in pcs]
     await asyncio.gather(*coros)
@@ -204,6 +229,7 @@ async def on_shutdown(app):
     # cleanup browser if it exists
     if hasattr(app, 'browser_controller'):
         app['browser_controller'].cleanup()
+    print("Cleanup completed")
 
 async def main():
     import logging
