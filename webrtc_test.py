@@ -53,11 +53,9 @@ class WebRTCServer:
             print(f"Received offer with type: {params['type']}")
 
             # Configure WebRTC with STUN server
-            pc = RTCPeerConnection(
-                configuration={
-                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-                }
-            )
+            pc = RTCPeerConnection({
+                "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+            })
             self.pcs.add(pc)
 
             @pc.on("connectionstatechange")
