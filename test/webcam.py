@@ -9,7 +9,7 @@ import av
 from aiohttp import web
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 from browser_use import Agent, Controller
-from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.browser.browser import Browser, BrowserConfig, BrowserContextConfig
 from dotenv import load_dotenv
 from fractions import Fraction
 from langchain_openai import ChatOpenAI
@@ -28,8 +28,9 @@ class BrowserController:
         return Browser(
             config=BrowserConfig(
                 headless=False,
-                window_size=(1280, 720),  # Set explicit window size
-                position=(0, 0)  # Position window at top-left
+                new_context_config=BrowserContextConfig(
+                    browser_window_size=lambda: {"width": 1280, "height": 720},  # Set explicit window size
+                )
             )
         )
 
