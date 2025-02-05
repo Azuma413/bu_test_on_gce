@@ -86,11 +86,9 @@ class WebRTCServer:
             print(f"Received offer with type: {params['type']}")
 
             # Configure WebRTC with STUN server
-            configuration = RTCConfiguration(
-                iceServers=[
-                    {"urls": ["stun:stun.l.google.com:19302"]}
-                ]
-            )
+            configuration = RTCConfiguration([
+                {"urls": ["stun:stun.l.google.com:19302"]}
+            ])
             pc = RTCPeerConnection(configuration=configuration)
             self.pcs.add(pc)
 
