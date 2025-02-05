@@ -77,7 +77,8 @@ class BrowserController:
             # Wait for the page to be fully loaded
             await asyncio.sleep(1)
             # Set window position and size to 640x720 at (0,0)
-            await self.set_window_position_and_size(0, 0, 640, 720)
+            await self.set_window_position_and_size(0, 0, 1280, 720)
+            # await self.set_window_position_and_size(0, 0, 640, 720)
             return True
         except Exception as e:
             print(f"Error starting browser: {e}")
