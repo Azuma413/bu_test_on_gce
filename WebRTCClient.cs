@@ -88,8 +88,8 @@ public class WebRTCClient : MonoBehaviour
                             currentRenderTexture.Release();
                         }
 
-                        // 新しいRenderTextureを作成（デフォルトRGBフォーマットを使用）
-                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.Default);
+                        // RenderTextureをRGBA32フォーマットで作成
+                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.RGBA32);
                         currentRenderTexture.Create();
 
                         // テクスチャを変換してRenderTextureに描画
