@@ -1,19 +1,14 @@
 import asyncio
 import json
+import os
 import ssl
-from typing import Optional
-import av
 import mss
 import numpy as np
+import av
 from aiohttp import web
-from aiortc import MediaStreamTrack, RTCConfiguration, RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaBlackhole, MediaPlayer
-from browser_use import Agent, Controller
-from browser_use.browser.browser import Browser, BrowserConfig
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-# Load environment variables
-load_dotenv()
+from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+
+ROOT = os.path.dirname(__file__)
 
 class ScreenCaptureTrack(MediaStreamTrack):
     """Media track for capturing the virtual display screen."""
@@ -36,31 +31,19 @@ class ScreenCaptureTrack(MediaStreamTrack):
         frame.time_base = time_base
         return frame
 
+async def index(request):
+    """Serve index.html"""
+    content = open(os.path.join(ROOT, "static/index.html"), "r").read()
+    return web.Response(content_type="text/html", text=content)
+
+async def javascript(request):
+    """Serve client.js"""
+    content = open(os.path.join(ROOT, "static/client.js"), "r").read()
+    return web.Response(content_type="application/javascript", text=content)
+
 class WebRTCServer:
     def __init__(self):
         self.pcs = set()
-        self.browser = None
-
-    def create_browser(self) -> Browser:
-        """Create browser instance."""
-        return Browser(
-            config=BrowserConfig(
-                headless=False,
-                # chrome_instance_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            )
-        )
-
-    async def initialize_browser_agent(self, task: str):
-        """Initialize and run browser agent with specified task."""
-        self.browser = self.create_browser()
-        model = ChatOpenAI(model='gpt-4o')
-        agent = Agent(
-            task=task,
-            llm=model,
-            controller=Controller(),
-            browser=self.browser,
-        )
-        await agent.run()
 
     async def offer(self, request):
         """Handle WebRTC offer from client."""
@@ -70,16 +53,16 @@ class WebRTCServer:
             print(f"Received offer with type: {params['type']}")
 
             # Configure WebRTC with STUN server
-            configuration = RTCConfiguration(
-                iceServers=[
-                    {"urls": ["stun:stun.l.google.com:19302"]}
-                ]
+            pc = RTCPeerConnection(
+                configuration={
+                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+                }
             )
-            pc = RTCPeerConnection(configuration=configuration)
             self.pcs.add(pc)
 
             @pc.on("connectionstatechange")
             async def on_connectionstatechange():
+                print(f"Connection state is {pc.connectionState}")
                 if pc.connectionState == "failed":
                     await pc.close()
                     self.pcs.discard(pc)
@@ -110,14 +93,14 @@ class WebRTCServer:
 
     async def cleanup(self):
         """Cleanup resources."""
-        # Close peer connections
         coros = [pc.close() for pc in self.pcs]
         await asyncio.gather(*coros)
         self.pcs.clear()
 
-        # Close browser if open
-        if self.browser:
-            self.browser.quit()
+async def on_shutdown(app):
+    """Cleanup when shutting down."""
+    server = app["server"]
+    await server.cleanup()
 
 async def main():
     # Create WebRTC server instance
@@ -125,52 +108,28 @@ async def main():
 
     # Setup web application
     app = web.Application()
-    
-    # Setup CORS with more permissive settings
-    # Setup CORS middleware
-    @web.middleware
-    async def cors_middleware(request, handler):
-        if request.method == "OPTIONS":
-            headers = {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-                "Access-Control-Max-Age": "3600"
-            }
-            return web.Response(headers=headers)
-        response = await handler(request)
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        return response
+    app["server"] = server
 
-    app.middlewares.append(cors_middleware)
-    
     # Setup routes
-    app.router.add_post("/offer", server.offer)
-    
-    # Add a basic handler for the root path
-    async def index(request):
-        return web.Response(text="WebRTC Server Running", content_type="text/plain")
-    
     app.router.add_get("/", index)
+    app.router.add_get("/client.js", javascript)
+    app.router.add_post("/offer", server.offer)
 
     # Add cleanup on shutdown
-    app.on_shutdown.append(lambda _: server.cleanup())
+    app.on_shutdown.append(on_shutdown)
 
-    # Initialize browser with a sample task
-    await server.initialize_browser_agent("Navigate to https://www.google.com")
-
-    # Start the server with SSL
+    # SSL configuration
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ssl_context.load_cert_chain('server.crt', 'server.key')
-    ssl_context.verify_mode = ssl.CERT_NONE  # Allow self-signed certificates
     
+    # Start the server
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8443, ssl_context=ssl_context)
     await site.start()
 
     print(f"Server running on https://34.133.108.164:8443")
-    print("WebRTC configuration initialized with STUN and TURN servers")
+    print("WebRTC server is ready")
 
     try:
         # Keep the server running
