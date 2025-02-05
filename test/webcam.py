@@ -24,6 +24,8 @@ class ScreenCaptureTrack(MediaStreamTrack):
         screen = self.sct.grab(self._monitor)
         # Convert to format suitable for av
         img = np.array(screen)
+        # Convert BGRA to BGR by selecting first 3 channels
+        img = img[:, :, :3]
         # Create video frame
         frame = av.VideoFrame.from_ndarray(img, format="bgr24")
         pts, time_base = await self.next_timestamp()
