@@ -52,10 +52,9 @@ class WebRTCServer:
             offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
             print(f"Received offer with type: {params['type']}")
 
-            # Configure WebRTC with STUN server and unified-plan semantics
+            # Configure WebRTC with STUN server
             pc = RTCPeerConnection({
-                "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}],
-                "sdpSemantics": "unified-plan"
+                "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
             })
             self.pcs.add(pc)
 
@@ -66,12 +65,9 @@ class WebRTCServer:
                     await pc.close()
                     self.pcs.discard(pc)
 
-            # Set up video track after checking transceiver direction
-            for transceiver in pc.getTransceivers():
-                if transceiver.kind == "video" and transceiver.direction == "recvonly":
-                    video = ScreenCaptureTrack()
-                    pc.addTrack(video)
-                    break
+            # Add video track before handling the offer
+            video = ScreenCaptureTrack()
+            pc.addTrack(video)
 
             # Handle the offer
             await pc.setRemoteDescription(offer)
