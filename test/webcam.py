@@ -18,6 +18,16 @@ class ScreenCaptureTrack(MediaStreamTrack):
         super().__init__()
         self.sct = mss.mss()
         self._monitor = {"top": 0, "left": 0, "width": 1280, "height": 720}
+        # フレームレートとタイムスタンプの管理用
+        self._timestamp = 0
+        self._frame_rate = 30
+        self._time_base = 1 / self._frame_rate
+
+    async def next_timestamp(self):
+        """タイムスタンプを生成"""
+        pts = self._timestamp
+        self._timestamp += 1
+        return pts, self._time_base
 
     async def recv(self):
         """Capture screen and return a video frame."""
