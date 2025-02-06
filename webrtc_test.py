@@ -6,7 +6,6 @@ import time
 import mss
 import numpy as np
 import av
-from aiohttp import web
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig, BrowserContextConfig
@@ -155,14 +154,6 @@ class ScreenCaptureTrack(MediaStreamTrack):
             print(f"Error capturing frame: {e}")
             raise
 
-async def index(request):
-    content = open(os.path.join(ROOT, "index.html"), "r").read()
-    return web.Response(content_type="text/html", text=content)
-
-async def javascript(request):
-    content = open(os.path.join(ROOT, "client.js"), "r").read()
-    return web.Response(content_type="application/javascript", text=content)
-
 import uuid
 
 # Dictionary to store peer connections with their IDs
@@ -303,35 +294,16 @@ async def main():
     ssl_context = ssl.SSLContext()
     ssl_context.load_cert_chain("./cert/server.crt", "./cert/server.key")
 
-    app = web.Application()
-    app.on_shutdown.append(on_shutdown)
-    app.router.add_get("/", index)
-    app.router.add_get("/client.js", javascript)
-    app.router.add_post("/offer", offer)
-    app.router.add_post("/candidate", handle_candidate)
-    
-    print("Server running on https://34.133.108.164:8443")
-    # Initialize browser controller
-    browser_controller = BrowserController()
-    app['browser_controller'] = browser_controller
-    
-    # Start browser in background
-    success = await browser_controller.start_browser()
-    if not success:
-        print("Failed to start browser, exiting...")
-        return
-    
-    # Run the application
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, host="0.0.0.0", port=8443, ssl_context=ssl_context)
-    await site.start()
-    
-    # Keep the server running
+    # Initialize WebRTC connection and start screen capture
+    pc = RTCPeerConnection()
+    video = ScreenCaptureTrack()
+    pc.addTrack(video)
+
+    # Keep the application running
     try:
         await asyncio.Event().wait()  # run forever
     finally:
-        await runner.cleanup()
+        await pc.close()
 
 if __name__ == "__main__":
     loop = asyncio.new_event_loop()
