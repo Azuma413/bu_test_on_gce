@@ -1,311 +1,259 @@
 using UnityEngine;
-using Unity.WebRTC;
-using System.Collections;
 using UnityEngine.UI;
+using Unity.WebRTC;
 using System;
-using System.Text;
 using UnityEngine.Networking;
-
-public class BypassCertificate : CertificateHandler
-{
-    protected override bool ValidateCertificate(byte[] certificateData)
-    {
-        return true;
-    }
-}
-
-[Serializable]
-public class WebRTCMessage
-{
-    public string type;
-    public string sdp;
-}
-
-[Serializable]
-public class IceCandidateMessage
-{
-    public string candidate;
-    public string sdpMid;
-    public int? sdpMLineIndex;
-}
-
-[Serializable]
-public class RTCIceServerJson
-{
-    public string[] urls;
-}
+using System.Text;
+using System.Collections;
+using System.Linq;
+using UnityEngine.Experimental.Rendering;
 
 public class WebRTCClient : MonoBehaviour
 {
     [SerializeField] private RawImage displayImage;
+    [SerializeField] private string serverUrl = "https://34.133.108.164:8443";
+    
     private RTCPeerConnection peerConnection;
-    private MediaStream receiveStream;
-    private RTCDataChannel dataChannel;
-    [SerializeField] private string ServerUrl = "https://34.133.108.164:8443";
-    [SerializeField] private int reconnectAttempts = 3;
-    [SerializeField] private float reconnectDelay = 5f;
-    private VideoStreamTrack videoStreamTrack;
-    private bool isDisposed = false;
-    private bool isReconnecting = false;
-    private Coroutine reconnectCoroutine;
-
-    private void Start()
+    private MediaStream videoStream;
+    private Texture2D currentTexture;
+    private Texture2D convertedTexture;
+    private string connectionId;
+    private Coroutine convertFrameCoroutine;
+    private System.Collections.Generic.List<RTCIceCandidate> pendingCandidates = new System.Collections.Generic.List<RTCIceCandidate>();
+    
+    // 証明書検証をスキップするための設定
+    class AcceptAllCertificatesSignedWithAnyPublicKey : CertificateHandler
     {
-        ConnectWebRTC();
-    }
-
-    private void ConnectWebRTC()
-    {
-        if (!isReconnecting)
+        protected override bool ValidateCertificate(byte[] certificateData)
         {
-            StartCoroutine(SetupWebRTC());
+            return true;
         }
     }
-
-    private IEnumerator SetupWebRTC()
+    
+    void Start()
     {
-        Debug.Log("Starting WebRTC setup...");
-        
-        // Configure and initialize RTCPeerConnection with ICE servers
-        var config = GetDefaultConfiguration();
-        peerConnection = new RTCPeerConnection(ref config);
-        
-        // Add transceiver to explicitly indicate we want to receive video
-        RTCRtpTransceiverInit init = new RTCRtpTransceiverInit
-        {
-            direction = RTCRtpTransceiverDirection.RecvOnly
-        };
-        
-        var transceiver = peerConnection.AddTransceiver(TrackKind.Video, init);
-        Debug.Log("Added video transceiver with RecvOnly direction");
+        // SSL/TLS証明書の検証をスキップ
+        Debug.Log("Starting WebRTC connection...");
+        StartConnection();
+    }
 
-        // Get available codecs
-        var codecs = RTCRtpSender.GetCapabilities(TrackKind.Video).codecs;
-        // Set codec preferences to match the Python side's VP8
-        var vp8Codecs = Array.FindAll(codecs, codec => codec.mimeType.ToLower() == "video/vp8");
-        if (vp8Codecs.Length > 0)
-        {
-            transceiver.SetCodecPreferences(vp8Codecs);
-            Debug.Log("Set VP8 codec preference");
-        }
+    void OnDestroy()
+    {
+        StopConnection();
+    }
 
-        // Setup event handlers
-        peerConnection.OnTrack = (RTCTrackEvent e) =>
+    private void StartConnection()
+    {
+        StartCoroutine(WebRTC.Update());
+        var configuration = new RTCConfiguration
         {
-            Debug.Log($"OnTrack received: {e.Track.Kind}");
-            if (e.Track is MediaStreamTrack track && track.Kind == TrackKind.Video)
-            {
-                Debug.Log("Received video track");
-                receiveStream = new MediaStream();
-                receiveStream.AddTrack(track);
-                videoStreamTrack = track as VideoStreamTrack;
-                videoStreamTrack.OnVideoReceived += UpdateDisplayImage;
+            iceServers = new[] { 
+                new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } }
             }
+        };
+
+        peerConnection = new RTCPeerConnection(ref configuration);
+
+        // ICE candidate イベントハンドラの設定
+        peerConnection.OnIceCandidate = candidate =>
+        {
+            if (candidate == null) return;
+            Debug.Log($"OnIceCandidate: {candidate.Candidate}");
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                Debug.Log("Connection ID not yet available, storing candidate");
+                pendingCandidates.Add(candidate);
+            }
+            else
+            {
+                StartCoroutine(SendCandidate(candidate));
+            }
+        };
+
+        peerConnection.OnIceConnectionChange = state =>
+        {
+            Debug.Log($"ICE Connection State: {state}");
         };
 
         peerConnection.OnConnectionStateChange = state =>
         {
-            Debug.Log($"Connection state changed to: {state}");
-            if (state == RTCPeerConnectionState.Failed || state == RTCPeerConnectionState.Disconnected)
+            Debug.Log($"Connection State: {state}");
+        };
+
+        // Set up event handlers
+        peerConnection.OnTrack = (RTCTrackEvent e) =>
+        {
+            if (e.Track is MediaStreamTrack track && track.Kind == TrackKind.Video)
             {
-                Debug.LogError($"Connection {state}");
-                if (!isReconnecting)
+                videoStream = e.Streams.First(); // VideoStreamを取得
+                var videoTrack = track as VideoStreamTrack;
+                // VideoStreamTrackのイベントハンドラを設定
+                videoTrack.OnVideoReceived += (Texture texture) =>
                 {
-                    AttemptReconnect();
-                }
+                    if (texture is Texture2D tex2D)
+                    {
+                        var supportedFormat = WebRTC.GetSupportedGraphicsFormat(SystemInfo.graphicsDeviceType);
+                        
+                        if (tex2D.graphicsFormat != supportedFormat)
+                        {
+                            // Create or reuse converted texture with correct format
+                            if (convertedTexture == null || convertedTexture.width != tex2D.width || convertedTexture.height != tex2D.height)
+                            {
+                                if (convertedTexture != null)
+                                    Destroy(convertedTexture);
+                                convertedTexture = new Texture2D(tex2D.width, tex2D.height, supportedFormat, TextureCreationFlags.None);
+                            }
+                            
+                            // Convert texture to supported format
+                            Graphics.ConvertTexture(tex2D, convertedTexture);
+                            currentTexture = convertedTexture;
+                        }
+                        else
+                        {
+                            currentTexture = tex2D;
+                        }
+
+                        Debug.Log($"Received texture format: {currentTexture.graphicsFormat}, size: {currentTexture.width}x{currentTexture.height}");
+
+                        // Get pixel data from the properly formatted texture
+                        Color32[] pixels = currentTexture.GetPixels32();
+
+                        // カラーチャンネル別に統計を計算
+                        double[] sums = new double[3];
+                        double[] sumSquares = new double[3];
+                        int pixelCount = pixels.Length;
+
+                        foreach (Color32 pixel in pixels)
+                        {
+                            sums[0] += pixel.b;      // Blue
+                            sums[1] += pixel.g;      // Green
+                            sums[2] += pixel.r;      // Red
+
+                            sumSquares[0] += pixel.b * pixel.b;
+                            sumSquares[1] += pixel.g * pixel.g;
+                            sumSquares[2] += pixel.r * pixel.r;
+                        }
+
+                        // 平均と分散を計算（倍精度で計算）
+                        double[] means = new double[3];
+                        double[] variances = new double[3];
+
+                        for (int c = 0; c < 3; c++)
+                        {
+                            means[c] = sums[c] / pixelCount;
+                            variances[c] = (sumSquares[c] / pixelCount) - (means[c] * means[c]);
+                        }
+
+                        double totalVariance = (variances[0] + variances[1] + variances[2]) / 3.0;
+
+                        Debug.Log($"Color Means: R={means[2]:F3}, G={means[1]:F3}, B={means[0]:F3}");
+                        Debug.Log($"Color Variance: {totalVariance:F3}");
+
+                        // Set the display texture
+                        displayImage.texture = currentTexture;
+                        displayImage.color = Color.white;
+                    }
+                    else
+                    {
+                        Debug.LogWarning("Texture is not Texture2D");
+                        displayImage.texture = texture;
+                    }
+                    displayImage.color = Color.white; // Set alpha to 1
+                };
             }
         };
 
-        peerConnection.OnIceCandidate = candidate =>
-        {
-            if (candidate == null) return;
-            Debug.Log($"ICE candidate gathered: {candidate.Candidate}");
-            StartCoroutine(SendIceCandidateToServer(candidate));
-        };
+        // Start negotiation
+        StartCoroutine(Negotiate());
+    }
 
-        peerConnection.OnIceGatheringStateChange = state =>
-        {
-            Debug.Log($"ICE gathering state changed to: {state}");
-        };
+    private IEnumerator Negotiate()
+    {
+        // Add transceivers (similar to client.js)
+        var videoInit = new RTCRtpTransceiverInit { direction = RTCRtpTransceiverDirection.RecvOnly };
+        var audioInit = new RTCRtpTransceiverInit { direction = RTCRtpTransceiverDirection.RecvOnly };
+        peerConnection.AddTransceiver(TrackKind.Video, videoInit);
+        peerConnection.AddTransceiver(TrackKind.Audio, audioInit);
 
-        peerConnection.OnNegotiationNeeded = () =>
-        {
-            Debug.Log("Negotiation needed event triggered");
-        };
-
-        peerConnection.OnDataChannel = channel =>
-        {
-            Debug.Log("Data channel received");
-            dataChannel = channel;
-        };
-
-        // Create and send offer
+        // Create and set local description
         var op = peerConnection.CreateOffer();
-        yield return op;
+        yield return new WaitUntil(() => op.IsDone);
+        
+        if (op.IsError)
+        {
+            Debug.LogError($"Create offer failed: {op.Error.message}");
+            yield break;
+        }
 
         var desc = op.Desc;
-        var opLocal = peerConnection.SetLocalDescription(ref desc);
-        yield return opLocal;
+        var setLocalDesc = peerConnection.SetLocalDescription(ref desc);
+        yield return new WaitUntil(() => setLocalDesc.IsDone);
 
-        yield return StartCoroutine(SendOfferToServer(desc));
-    }
-
-    private IEnumerator SendIceCandidateToServer(RTCIceCandidate candidate)
-    {
-        // Nullチェックを追加
-        var message = new IceCandidateMessage
+        if (setLocalDesc.IsError)
         {
-            candidate = candidate.Candidate,
-            sdpMid = string.IsNullOrEmpty(candidate.SdpMid) ? "" : candidate.SdpMid,
-            sdpMLineIndex = candidate.SdpMLineIndex.HasValue ? candidate.SdpMLineIndex : 0
-        };
-
-        string jsonCandidate = JsonUtility.ToJson(message);
-        using (var request = new UnityWebRequest(ServerUrl + "/candidate", "POST"))
-        {
-            byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonCandidate);
-            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
-            request.downloadHandler = new DownloadHandlerBuffer();
-            request.SetRequestHeader("Content-Type", "application/json");
-            request.certificateHandler = new BypassCertificate();
-
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityWebRequest.Result.Success)
-            {
-                Debug.LogError($"Failed to send ICE candidate: {request.error}");
-            }
+            Debug.LogError($"Set local description failed: {setLocalDesc.Error.message}");
+            yield break;
         }
-    }
 
-    private IEnumerator SendOfferToServer(RTCSessionDescription desc)
-    {
-        Debug.Log("Preparing offer to send to server...");
-        Debug.Log($"Offer type: {desc.type}");
-        Debug.Log($"Offer SDP: {desc.sdp}");
+        // Wait for ICE gathering to complete
+        yield return new WaitUntil(() => peerConnection.GatheringState == RTCIceGatheringState.Complete);
 
-        var sdpType = desc.type.ToString().ToLower();
-        Debug.Log($"Converted SDP type: {sdpType}");
-
-        var offerMessage = new WebRTCMessage
+        // Send offer to signaling server
+        var offer = peerConnection.LocalDescription;
+        var jsonOffer = JsonUtility.ToJson(new SignalingMessage
         {
-            type = sdpType,
-            sdp = desc.sdp
-        };
+            sdp = offer.sdp,
+            type = offer.type.ToString().ToLower()
+        });
 
-        string jsonOffer = JsonUtility.ToJson(offerMessage);
-        Debug.Log($"Serialized JSON offer: {jsonOffer}");
-        Debug.Log($"Sending offer to: {ServerUrl}/offer");
-        using (var request = new UnityWebRequest(ServerUrl + "/offer", "POST"))
+        using (var request = new UnityWebRequest($"{serverUrl}/offer", "POST"))
         {
+            // 証明書検証をスキップする設定を追加
+            request.certificateHandler = new AcceptAllCertificatesSignedWithAnyPublicKey();
             byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonOffer);
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
-            request.certificateHandler = new BypassCertificate();
-            request.timeout = 60; // Increase timeout to 60 seconds
 
             yield return request.SendWebRequest();
 
             if (request.result != UnityWebRequest.Result.Success)
             {
-                string errorMessage = $"Failed to send offer: {request.error}\nResponse Code: {request.responseCode}";
-                if (request.downloadHandler != null)
-                {
-                    errorMessage += $"\nResponse: {request.downloadHandler.text}";
-                }
-                Debug.LogError(errorMessage);
+                Debug.LogError($"Failed to send offer: {request.error}");
                 yield break;
             }
 
-            WebRTCMessage response = null;
-            RTCSessionDescription remoteDesc = default;
-
-            try
+            // Parse answer
+            var response = JsonUtility.FromJson<SignalingMessage>(request.downloadHandler.text);
+            connectionId = response.connectionId;  // Store the connection ID
+            RTCSessionDescription answer = new RTCSessionDescription
             {
-                Debug.Log("Received answer from server");
-                Debug.Log($"Response: {request.downloadHandler.text}");
-                
-                response = JsonUtility.FromJson<WebRTCMessage>(request.downloadHandler.text);
-                if (response == null)
-                {
-                    throw new Exception("Failed to parse server response");
-                }
+                type = (RTCSdpType)Enum.Parse(typeof(RTCSdpType), response.type, true),
+                sdp = response.sdp
+            };
 
-                Debug.Log($"Answer SDP: {response.sdp}");
-                remoteDesc = new RTCSessionDescription
-                {
-                    type = RTCSdpType.Answer,
-                    sdp = response.sdp
-                };
-            }
-            catch (Exception ex)
+            // Set remote description
+            var setRemoteDesc = peerConnection.SetRemoteDescription(ref answer);
+            yield return new WaitUntil(() => setRemoteDesc.IsDone);
+
+            if (setRemoteDesc.IsError)
             {
-                Debug.LogError($"Error processing server response: {ex.Message}");
-                AttemptReconnect();
+                Debug.LogError($"Set remote description failed: {setRemoteDesc.Error.message}");
                 yield break;
             }
 
-            if (response != null)
+            // Send any pending candidates now that we have the connection ID
+            Debug.Log($"Sending {pendingCandidates.Count} pending candidates");
+            foreach (var candidate in pendingCandidates)
             {
-                Debug.Log("Setting remote description...");
-                yield return StartCoroutine(SetRemoteDescriptionCoroutine(remoteDesc));
+                StartCoroutine(SendCandidate(candidate));
             }
+            pendingCandidates.Clear();
         }
     }
 
-    private void UpdateDisplayImage(Texture texture)
+    private void StopConnection()
     {
-        if (isDisposed) return;
-        if (displayImage != null && texture != null)
-        {
-            Debug.Log($"Updating display image with texture: {texture.width}x{texture.height}");
-            displayImage.texture = texture;
-            displayImage.enabled = true;
-        }
-        else if (displayImage == null)
-        {
-            Debug.LogError("Display image reference is missing");
-        }
-        else
-        {
-            Debug.LogError("Received null texture");
-        }
-    }
-
-    private RTCConfiguration GetDefaultConfiguration()
-    {
-        return new RTCConfiguration
-        {
-            iceServers = new[] {
-                new RTCIceServer { 
-                    urls = new[] { "stun:stun.l.google.com:19302" }
-                }
-            }
-        };
-    }
-
-    private void CleanupResources(bool fullCleanup = true)
-    {
-        if (isDisposed && fullCleanup) return;
-        
-        if (fullCleanup)
-        {
-            isDisposed = true;
-            if (reconnectCoroutine != null)
-            {
-                StopCoroutine(reconnectCoroutine);
-                reconnectCoroutine = null;
-            }
-        }
-
-        if (videoStreamTrack != null)
-        {
-            videoStreamTrack.OnVideoReceived -= UpdateDisplayImage;
-            videoStreamTrack.Dispose();
-            videoStreamTrack = null;
-        }
-
         if (peerConnection != null)
         {
             peerConnection.Close();
@@ -313,70 +261,74 @@ public class WebRTCClient : MonoBehaviour
             peerConnection = null;
         }
 
-        if (receiveStream != null)
+        if (videoStream != null)
         {
-            receiveStream.Dispose();
-            receiveStream = null;
+            videoStream.Dispose();
+            videoStream = null;
         }
 
-        if (dataChannel != null)
+        // テクスチャのクリーンアップ
+            if (convertFrameCoroutine != null)
+            {
+                StopCoroutine(convertFrameCoroutine);
+                convertFrameCoroutine = null;
+            }
+            
+            if (convertedTexture != null)
+            {
+                Destroy(convertedTexture);
+                convertedTexture = null;
+            }
+            if (currentTexture != null && currentTexture != convertedTexture)
+            {
+                currentTexture = null; // Don't destroy as it's managed by WebRTC
+            }
+    }
+
+    private IEnumerator SendCandidate(RTCIceCandidate candidate)
+    {
+        CandidateMessage candMsg = new CandidateMessage
         {
-            dataChannel.Close();
-            dataChannel = null;
+            candidate = candidate.Candidate,
+            sdpMid = candidate.SdpMid,
+            sdpMLineIndex = candidate.SdpMLineIndex ?? 0,
+            connectionId = connectionId
+        };
+        var jsonCandidate = JsonUtility.ToJson(candMsg);
+
+        using (var request = new UnityWebRequest($"{serverUrl}/candidate", "POST"))
+        {
+            request.certificateHandler = new AcceptAllCertificatesSignedWithAnyPublicKey();
+            byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonCandidate);
+            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"Failed to send candidate: {request.error}");
+                yield break;
+            }
+            // You can parse server response here if needed for remote candidate
         }
     }
 
-    private IEnumerator SetRemoteDescriptionCoroutine(RTCSessionDescription remoteDesc)
+    [Serializable]
+    private class CandidateMessage
     {
-        var op = peerConnection.SetRemoteDescription(ref remoteDesc);
-        yield return op;
-        
-        if (op.IsError)
-        {
-            throw new Exception($"Failed to set remote description: {op.Error.message}");
-        }
-        
-        Debug.Log("Remote description set successfully");
-        isReconnecting = false;
+        public string candidate;
+        public string sdpMid;
+        public int sdpMLineIndex;
+        public string connectionId;
     }
 
-    private void AttemptReconnect()
+    [Serializable]
+    private class SignalingMessage
     {
-        if (reconnectCoroutine != null)
-        {
-            StopCoroutine(reconnectCoroutine);
-        }
-        reconnectCoroutine = StartCoroutine(ReconnectCoroutine());
-    }
-
-    private IEnumerator ReconnectCoroutine()
-    {
-        isReconnecting = true;
-        int attempts = 0;
-
-        while (attempts < reconnectAttempts && !isDisposed)
-        {
-            Debug.Log($"Attempting to reconnect... Attempt {attempts + 1}/{reconnectAttempts}");
-            CleanupResources(false);
-            yield return new WaitForSeconds(reconnectDelay);
-            ConnectWebRTC();
-            attempts++;
-        }
-
-        if (attempts >= reconnectAttempts)
-        {
-            Debug.LogError("Max reconnection attempts reached");
-            CleanupResources(true);
-        }
-    }
-
-    private void OnDestroy()
-    {
-        CleanupResources(true);
-    }
-
-    private void OnApplicationQuit()
-    {
-        CleanupResources(true);
+        public string sdp;
+        public string type;
+        public string connectionId;
     }
 }

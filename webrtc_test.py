@@ -1,256 +1,275 @@
+"""
+WebRTCを使用したブラウザ画面共有サーバー
+
+このモジュールは、WebRTCを利用してブラウザの画面をキャプチャし、
+クライアントにストリーミングするサーバーを実装します。
+"""
 import asyncio
 import json
+import os
 import ssl
 import time
-from typing import Optional
-import av
 import mss
 import numpy as np
-import cv2
+import av
 from aiohttp import web
-from aiortc import MediaStreamTrack, RTCConfiguration, RTCPeerConnection, RTCSessionDescription, RTCRtpCodecParameters, RTCIceCandidate
-from aiortc.contrib.media import MediaBlackhole, MediaPlayer
+from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
 from browser_use import Agent, Controller
-from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.browser.browser import Browser, BrowserConfig, BrowserContextConfig
 from dotenv import load_dotenv
+from fractions import Fraction
 from langchain_openai import ChatOpenAI
 
 # Load environment variables
 load_dotenv()
 
-class ScreenCaptureTrack(MediaStreamTrack):
-    """Media track for capturing the virtual display screen."""
-    kind = "video"
-
+class BrowserController:
+    """ブラウザの制御を管理するクラス"""
     def __init__(self):
-        super().__init__()
-        self.sct = mss.mss()
-        self._monitor = {"top": 0, "left": 0, "width": 1280, "height": 720}
-        self._last_frame_time = 0
-        self._frame_interval = 1/30  # 30 FPS
-
-    async def recv(self):
-        """Capture screen and return a video frame."""
-        # フレームレート制御
-        current_time = time.time()
-        if current_time - self._last_frame_time < self._frame_interval:
-            await asyncio.sleep(self._frame_interval - (current_time - self._last_frame_time))
-        
-        screen = self.sct.grab(self._monitor)
-        img = np.array(screen)
-        
-        # BGRAからRGBに変換（Unity側はRGBを期待している）
-        img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
-        
-        # フレーム生成時にRGBフォーマットを明示的に指定
-        frame = av.VideoFrame.from_ndarray(img, format='rgb24')
-        frame.width = 1280
-        frame.height = 720
-        
-        pts, time_base = await self.next_timestamp()
-        frame.pts = pts
-        frame.time_base = time_base
-        self._last_frame_time = time.time()
-        return frame
-
-class WebRTCServer:
-    def __init__(self):
-        self.pcs = set()
         self.browser = None
 
     def create_browser(self) -> Browser:
-        """Create browser instance."""
+        """ブラウザインスタンスを作成する"""
         return Browser(
             config=BrowserConfig(
                 headless=False,
+                chrome_instance_path="/usr/bin/google-chrome",
+                # new_context_config=BrowserContextConfig(
+                #     browser_window_size=lambda: {"width": 1280, "height": 720},  # Set explicit window size
+                # )
             )
         )
 
-    async def initialize_browser_agent(self, task: str):
-        """Initialize and run browser agent with specified task."""
+    async def set_window_position_and_size(self, x: int, y: int, width: int, height: int):
+        """Chromeウィンドウの位置とサイズを設定する
+
+        Args:
+            x: ウィンドウのX座標
+            y: ウィンドウのY座標
+            width: ウィンドウの幅
+            height: ウィンドウの高さ
+        """
+        window_ids = os.popen("xdotool search --onlyvisible --name 'Chrome'").read().strip().split('\n')
+        if not window_ids:
+            return False
+
+        window_id = window_ids[-1]
+        os.system(f'xdotool windowsize {window_id} {width} {height}')
+        os.system(f'xdotool windowmove {window_id} {x} {y}')
+        return True
+
+    async def start_browser(self):
+        """ブラウザを起動し、初期設定を行う"""
         self.browser = self.create_browser()
         model = ChatOpenAI(model='gpt-4o')
         agent = Agent(
-            task=task,
+            task="Navigate to about:blank",
             llm=model,
             controller=Controller(),
             browser=self.browser,
         )
         await agent.run()
+        await asyncio.sleep(1)
+        return await self.set_window_position_and_size(0, 0, 1280, 825)
 
-    async def offer(self, request):
-        """Handle WebRTC offer from client."""
-        try:
-            params = await request.json()
-            print(f"Received offer params: {json.dumps(params, indent=2)}")
-            print(f"Parsing SDP offer content: {params['sdp'][:100]}...")  # Show first 100 chars
-            
-            try:
-                offer = RTCSessionDescription(
-                    sdp=params["sdp"],
-                    type=params["type"].lower()  # Ensure type is lowercase
-                )
-                print(f"Created RTCSessionDescription successfully")
-                print(f"Offer type: {offer.type}, SDP length: {len(offer.sdp)}")
-            except Exception as e:
-                print(f"Error creating RTCSessionDescription: {str(e)}")
-                print(f"Received params type: {type(params['type'])}")
-                print(f"Received params sdp type: {type(params['sdp'])}")
-                raise
-
-            # Configure WebRTC
-            pc = RTCPeerConnection()
-            print("Created RTCPeerConnection successfully")
-            self.pcs.add(pc)
-            print("Added peer connection to set")
-
-            @pc.on("connectionstatechange")
-            async def on_connectionstatechange():
-                print(f"Connection state changed to: {pc.connectionState}")
-                if pc.connectionState == "failed":
-                    await pc.close()
-                    self.pcs.discard(pc)
-
-            # Create screen capture track without forcing specific codec
-            video = ScreenCaptureTrack()
-            pc.addTrack(video)
-
-            # Handle the offer
-            await pc.setRemoteDescription(offer)
-            answer = await pc.createAnswer()
-            await pc.setLocalDescription(answer)
-
-            return web.Response(
-                content_type="application/json",
-                text=json.dumps({
-                    "sdp": pc.localDescription.sdp,
-                    "type": pc.localDescription.type
-                })
-            )
-        except Exception as e:
-            print(f"Error in offer handler: {str(e)}")
-            return web.Response(
-                status=500,
-                content_type="application/json",
-                text=json.dumps({"error": str(e)})
-            )
-
-    async def candidate(self, request):
-        """Handle incoming ICE candidates."""
-        try:
-            params = await request.json()
-            # Nullチェックを追加
-            sdp_mline_index = params.get("sdpMLineIndex")
-            if sdp_mline_index is None:
-                sdp_mline_index = 0  # デフォルト値を設定
-                
-            # Get candidate data
-            candidate_str = params["candidate"]
-            if not candidate_str.startswith("candidate:"):
-                candidate_str = "candidate:" + candidate_str
-
-            print(f"Received ICE candidate string: {candidate_str}")
-            print(f"sdpMid: {params.get('sdpMid', '')}")
-            print(f"sdpMLineIndex: {sdp_mline_index}")
-
-            # Create RTCIceCandidate ensuring proper format
-            candidate = RTCIceCandidate(
-                sdpMid=params.get("sdpMid", ""),
-                sdpMLineIndex=sdp_mline_index,
-                candidate=candidate_str
-            )
-            print(f"Created ICE candidate with: {candidate_str}")
-            
-            # Find the associated peer connection
-            # In this simple example, we assume only one connection
-            if len(self.pcs) > 0:
-                pc = next(iter(self.pcs))
-                await pc.addIceCandidate(candidate)
-                print("Added ICE candidate successfully")
-            else:
-                print("No active peer connection to add ICE candidate to")
-            
-            return web.Response(
-                content_type="application/json",
-                text=json.dumps({"status": "ok"})
-            )
-        except Exception as e:
-            print(f"Error handling ICE candidate: {str(e)}")
-            return web.Response(
-                status=500,
-                content_type="application/json",
-                text=json.dumps({"error": str(e)})
-            )
-
-    async def cleanup(self):
-        """Cleanup resources."""
-        # Close peer connections
-        coros = [pc.close() for pc in self.pcs]
-        await asyncio.gather(*coros)
-        self.pcs.clear()
-
-        # Close browser if open
+    def cleanup(self):
+        """Clean up browser resources."""
         if self.browser:
             self.browser.quit()
 
+class ScreenCaptureTrack(MediaStreamTrack):
+    """画面キャプチャ用のMediaTrackクラス"""
+    kind = "video"
+
+    def __init__(self):
+        super().__init__()
+        self.sct = mss.mss()
+        monitors = self.sct.monitors
+
+        # プライマリモニターまたは利用可能な唯一のモニターを選択
+        self._monitor = monitors[1] if len(monitors) > 1 else monitors[0]
+
+        # キャプチャ範囲を1280x825に設定
+        self._monitor = {
+            "left": self._monitor["left"],
+            "top": self._monitor["top"],
+            "width": 1280,
+            "height": 825
+        }
+        
+        self._timestamp = 0
+        self._frame_rate = 30
+
+    async def next_timestamp(self):
+        """タイムスタンプを生成"""
+        pts = self._timestamp
+        self._timestamp += 1
+        return pts, Fraction(1, self._frame_rate)
+
+    async def recv(self):
+        """Capture screen and return a video frame."""
+        try:
+            screen = self.sct.grab(self._monitor) # RGBA 32bit
+            # 画像フォーマットの変換
+            img = np.array(screen)
+            frame = av.VideoFrame.from_ndarray(img, format="bgra")
+            pts, time_base = await self.next_timestamp()
+            frame.pts = pts
+            frame.time_base = time_base
+            return frame
+            
+        except Exception as e:
+            print(f"Error capturing frame: {e}")
+            raise
+
+import uuid
+
+# Dictionary to store peer connections with their IDs
+pcs = {}
+
+async def offer(request):
+    params = await request.json()
+    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+
+    # Generate unique ID for this connection
+    connection_id = str(uuid.uuid4())
+    pc = RTCPeerConnection()
+    pcs[connection_id] = pc
+
+    # 接続状態の監視
+    @pc.on("connectionstatechange")
+    async def on_connectionstatechange():
+        if pc.connectionState == "failed":
+            await pc.close()
+            pcs.discard(pc)
+
+    # ICE接続状態の監視
+    @pc.on("iceconnectionstatechange")
+    async def on_iceconnectionstatechange():
+        pass
+
+    # Add screen capture track with optimized settings
+    video = ScreenCaptureTrack()
+    sender = pc.addTrack(video)
+
+    await pc.setRemoteDescription(offer)
+    answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+
+    return web.Response(
+        content_type="application/json",
+        text=json.dumps({
+            "sdp": pc.localDescription.sdp,
+            "type": pc.localDescription.type,
+            "connectionId": connection_id
+        }),
+    )
+
+def parse_candidate(candidate_str):
+    # candidate:1920441499 1 tcp 1518283007 240d:1e:126:8605:3beb:aee7:7c31:ac39 51846 typ host tcptype passive ...
+    parts = candidate_str.split()
+    if not parts[0].startswith("candidate:"):
+        return None
+    
+    foundation = parts[0].split(":")[1]
+    component = int(parts[1])
+    protocol = parts[2]
+    priority = int(parts[3])
+    ip = parts[4]
+    port = int(parts[5])
+    
+    # find type
+    try:
+        type_index = parts.index("typ")
+        candidate_type = parts[type_index + 1]
+    except ValueError:
+        candidate_type = "host"  # default type
+    
+    return {
+        "foundation": foundation,
+        "component": component,
+        "protocol": protocol,
+        "priority": priority,
+        "ip": ip,
+        "port": port,
+        "type": candidate_type,
+    }
+
+async def handle_candidate(request):
+    """ICE candidateの処理を行う"""
+    params = await request.json()
+    connection_id = params.get("connectionId")
+    
+    if not connection_id or connection_id not in pcs:
+        return web.Response(status=400, text="Invalid connection ID")
+        
+    pc = pcs[connection_id]
+    candidate_str = params["candidate"]
+    sdp_mid = params.get("sdpMid")
+    sdp_mline_index = params.get("sdpMLineIndex", 0)
+
+    parsed = parse_candidate(candidate_str)
+    if parsed is None:
+        return web.Response(status=400, text="Invalid candidate string")
+
+    candidate = RTCIceCandidate(
+        foundation=parsed["foundation"],
+        component=parsed["component"],
+        protocol=parsed["protocol"],
+        priority=parsed["priority"],
+        ip=parsed["ip"],
+        port=parsed["port"],
+        type=parsed["type"],
+        sdpMid=sdp_mid,
+        sdpMLineIndex=sdp_mline_index,
+    )
+
+    await pc.addIceCandidate(candidate)
+    return web.Response(text="OK")
+
+async def on_shutdown(app):
+    """アプリケーションのシャットダウン時の処理"""
+    # WebRTC接続のクリーンアップ
+    coros = [pc.close() for pc in pcs.values()]
+    await asyncio.gather(*coros)
+    pcs.clear()
+    
+    # ブラウザのクリーンアップ
+    if hasattr(app, 'browser_controller'):
+        app['browser_controller'].cleanup()
+
 async def main():
-    # Create WebRTC server instance
-    server = WebRTCServer()
+    """WebRTCサーバーのメインエントリーポイント"""
+    ssl_context = ssl.SSLContext()
+    ssl_context.load_cert_chain("./cert/server.crt", "./cert/server.key")
 
-    # Setup web application
+    # アプリケーションの設定
     app = web.Application()
+    app.on_shutdown.append(on_shutdown)
+    app.router.add_post("/offer", offer)
+    app.router.add_post("/candidate", handle_candidate)
     
-    # Setup CORS middleware
-    @web.middleware
-    async def cors_middleware(request, handler):
-        if request.method == "OPTIONS":
-            headers = {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-                "Access-Control-Max-Age": "3600"
-            }
-            return web.Response(headers=headers)
-        response = await handler(request)
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        return response
-
-    app.middlewares.append(cors_middleware)
+    # ブラウザコントローラーの初期化と起動
+    browser_controller = BrowserController()
+    app['browser_controller'] = browser_controller
+    if not await browser_controller.start_browser():
+        return
     
-    # Setup routes
-    app.router.add_post("/offer", server.offer)
-    app.router.add_post("/candidate", server.candidate)  # Add route for ICE candidates
-    
-    # Add a basic handler for the root path
-    async def index(request):
-        return web.Response(text="WebRTC Server Running", content_type="text/plain")
-    
-    app.router.add_get("/", index)
-
-    # Add cleanup on shutdown
-    app.on_shutdown.append(lambda _: server.cleanup())
-
-    # Initialize browser with a sample task
-    await server.initialize_browser_agent("Navigate to https://www.google.com")
-
-    # Start the server with SSL
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ssl_context.load_cert_chain('server.crt', 'server.key')
-    ssl_context.verify_mode = ssl.CERT_NONE  # Allow self-signed certificates
-    
+    # サーバーの起動
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8443, ssl_context=ssl_context)
+    site = web.TCPSite(runner, host="0.0.0.0", port=8443, ssl_context=ssl_context)
     await site.start()
-
-    print(f"Server running on https://34.133.108.164:8443")
-    print("WebRTC configuration initialized with STUN and TURN servers")
-
+    
     try:
-        # Keep the server running
         await asyncio.Event().wait()
     finally:
         await runner.cleanup()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main())
+    finally:
+        loop.close()
