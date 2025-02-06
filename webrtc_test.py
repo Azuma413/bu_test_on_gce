@@ -23,8 +23,6 @@ from langchain_openai import ChatOpenAI
 # Load environment variables
 load_dotenv()
 
-ROOT = os.path.dirname(__file__)
-
 class BrowserController:
     """ブラウザの制御を管理するクラス"""
     def __init__(self):
@@ -124,14 +122,6 @@ class ScreenCaptureTrack(MediaStreamTrack):
         except Exception as e:
             print(f"Error capturing frame: {e}")
             raise
-
-async def index(request):
-    content = open(os.path.join(ROOT, "index.html"), "r").read()
-    return web.Response(content_type="text/html", text=content)
-
-async def javascript(request):
-    content = open(os.path.join(ROOT, "client.js"), "r").read()
-    return web.Response(content_type="application/javascript", text=content)
 
 import uuid
 
@@ -257,8 +247,6 @@ async def main():
     # アプリケーションの設定
     app = web.Application()
     app.on_shutdown.append(on_shutdown)
-    app.router.add_get("/", index)
-    app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
     app.router.add_post("/candidate", handle_candidate)
     
