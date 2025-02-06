@@ -27,7 +27,7 @@ class BrowserController:
     """ブラウザの制御を管理するクラス"""
     def __init__(self):
         self.browser = None
-        
+
     def create_browser(self) -> Browser:
         """ブラウザインスタンスを作成する"""
         return Browser(
@@ -52,7 +52,7 @@ class BrowserController:
         window_ids = os.popen("xdotool search --onlyvisible --name 'Chrome'").read().strip().split('\n')
         if not window_ids:
             return False
-        
+
         window_id = window_ids[-1]
         os.system(f'xdotool windowsize {window_id} {width} {height}')
         os.system(f'xdotool windowmove {window_id} {x} {y}')
@@ -70,8 +70,8 @@ class BrowserController:
         )
         await agent.run()
         await asyncio.sleep(1)
-        return await self.set_window_position_and_size(0, 0, 1280, 720)
-            
+        return await self.set_window_position_and_size(0, 0, 1280, 825)
+
     def cleanup(self):
         """Clean up browser resources."""
         if self.browser:
@@ -85,16 +85,16 @@ class ScreenCaptureTrack(MediaStreamTrack):
         super().__init__()
         self.sct = mss.mss()
         monitors = self.sct.monitors
-        
+
         # プライマリモニターまたは利用可能な唯一のモニターを選択
         self._monitor = monitors[1] if len(monitors) > 1 else monitors[0]
-            
-        # キャプチャ範囲を1280x720に設定
+
+        # キャプチャ範囲を1280x825に設定
         self._monitor = {
             "left": self._monitor["left"],
             "top": self._monitor["top"],
             "width": 1280,
-            "height": 720
+            "height": 825
         }
         
         self._timestamp = 0
@@ -112,7 +112,6 @@ class ScreenCaptureTrack(MediaStreamTrack):
             screen = self.sct.grab(self._monitor) # RGBA 32bit
             # 画像フォーマットの変換
             img = np.array(screen)
-            img = img[:, :, [2, 1, 0, 3]]  # RGBA -> BGRA
             frame = av.VideoFrame.from_ndarray(img, format="bgra")
             pts, time_base = await self.next_timestamp()
             frame.pts = pts
