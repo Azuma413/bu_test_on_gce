@@ -14,8 +14,9 @@ public class WebRTCClient : MonoBehaviour
     
     private RTCPeerConnection peerConnection;
     private MediaStream videoStream;
-    private RenderTexture currentRenderTexture;
+    private Texture2D currentTexture;
     private string connectionId;
+    private System.Collections.Generic.List<RTCIceCandidate> pendingCandidates = new System.Collections.Generic.List<RTCIceCandidate>();
     
     // 証明書検証をスキップするための設定
     class AcceptAllCertificatesSignedWithAnyPublicKey : CertificateHandler
@@ -54,7 +55,15 @@ public class WebRTCClient : MonoBehaviour
         {
             if (candidate == null) return;
             Debug.Log($"OnIceCandidate: {candidate.Candidate}");
-            StartCoroutine(SendCandidate(candidate));
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                Debug.Log("Connection ID not yet available, storing candidate");
+                pendingCandidates.Add(candidate);
+            }
+            else
+            {
+                StartCoroutine(SendCandidate(candidate));
+            }
         };
 
         peerConnection.OnIceConnectionChange = state =>
@@ -79,36 +88,74 @@ public class WebRTCClient : MonoBehaviour
                 {
                     if (texture is Texture2D tex2D)
                     {
-                        // 前のRenderTextureを解放
-                        if (currentRenderTexture != null)
+                        // 前のテクスチャを破棄
+                        if (currentTexture != null)
                         {
-                            currentRenderTexture.Release();
+                            Destroy(currentTexture);
                         }
 
-                        // RenderTextureをRGBA32フォーマットで作成
-                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.ARGB32);
-                        currentRenderTexture.Create();
-
-                        // テクスチャを変換してRenderTextureに描画
-                        Graphics.Blit(tex2D, currentRenderTexture);
-
-                        // currentRenderTextureの平均と分散を計算
-                        Texture2D tempTexture = new Texture2D(currentRenderTexture.width, currentRenderTexture.height, TextureFormat.RGBA32, false);
-                        RenderTexture.active = currentRenderTexture;
-                        tempTexture.ReadPixels(new Rect(0, 0, currentRenderTexture.width, currentRenderTexture.height), 0, 0);
-                        tempTexture.Apply();
-                        RenderTexture.active = null;
-
-                        var rtPixels = tempTexture.GetPixels();
-                        var rtAvg = rtPixels.Average(p => p.grayscale);
-                        var rtVariance = rtPixels.Average(p => (p.grayscale - rtAvg) * (p.grayscale - rtAvg));
-                        Debug.Log($"RT Average: {rtAvg}, RT Variance: {rtVariance}");
-
-                        // Use the currentRenderTexture for display
-                        displayImage.texture = currentRenderTexture;
+                        Debug.Log($"Received texture format: {tex2D.format}, size: {tex2D.width}x{tex2D.height}");
                         
-                        // Clean up temporary texture
-                        Destroy(tempTexture);
+                        // 元のテクスチャのピクセルデータを取得
+                        var sourcePixels = tex2D.GetPixels32();
+                        
+                        // 新しいテクスチャを作成（明示的にRGBA32フォーマットを使用）
+                        var correctedTex = new Texture2D(tex2D.width, tex2D.height, TextureFormat.RGBA32, false);
+                        var newPixels = new Color32[sourcePixels.Length];
+                        
+                        // ピクセルデータを処理
+                        for (int i = 0; i < sourcePixels.Length; i++)
+                        {
+                            var pixel = sourcePixels[i];
+                            newPixels[i] = new Color32(
+                                pixel.r,  // R
+                                pixel.g,  // G
+                                pixel.b,  // B
+                                255      // A = 255 (完全な不透明)
+                            );
+                        }
+                        
+                        // 新しいピクセルデータを適用
+                        correctedTex.SetPixels32(newPixels);
+                        correctedTex.Apply();
+                        
+                        // 統計情報の計算
+                        long[] sums = new long[3] { 0, 0, 0 };
+                        long[] sumSquares = new long[3] { 0, 0, 0 };
+                        int pixelCount = newPixels.Length;
+                        
+                        foreach (var pixel in newPixels)
+                        {
+                            // R, G, Bの値を収集
+                            sums[0] += pixel.r;
+                            sums[1] += pixel.g;
+                            sums[2] += pixel.b;
+                            
+                            // 二乗和を計算
+                            sumSquares[0] += pixel.r * pixel.r;
+                            sumSquares[1] += pixel.g * pixel.g;
+                            sumSquares[2] += pixel.b * pixel.b;
+                        }
+                        
+                        // 平均と分散を計算
+                        float[] means = new float[3];
+                        float[] variances = new float[3];
+                        
+                        for (int c = 0; c < 3; c++)
+                        {
+                            means[c] = (float)sums[c] / pixelCount;
+                            variances[c] = ((float)sumSquares[c] / pixelCount) - (means[c] * means[c]);
+                        }
+                        
+                        float totalVariance = (variances[0] + variances[1] + variances[2]) / 3.0f;
+                        
+                        Debug.Log($"Color Means: R={means[0]:F3}, G={means[1]:F3}, B={means[2]:F3}");
+                        Debug.Log($"Color Variance: {totalVariance:F3}");
+                        
+                        // テクスチャを保存して表示
+                        currentTexture = correctedTex;
+                        displayImage.texture = currentTexture;
+                        displayImage.color = Color.white;
                     }
                     else
                     {
@@ -198,6 +245,14 @@ public class WebRTCClient : MonoBehaviour
                 Debug.LogError($"Set remote description failed: {setRemoteDesc.Error.message}");
                 yield break;
             }
+
+            // Send any pending candidates now that we have the connection ID
+            Debug.Log($"Sending {pendingCandidates.Count} pending candidates");
+            foreach (var candidate in pendingCandidates)
+            {
+                StartCoroutine(SendCandidate(candidate));
+            }
+            pendingCandidates.Clear();
         }
     }
 
@@ -216,11 +271,11 @@ public class WebRTCClient : MonoBehaviour
             videoStream = null;
         }
 
-        // RenderTextureのクリーンアップ
-        if (currentRenderTexture != null)
+        // テクスチャのクリーンアップ
+        if (currentTexture != null)
         {
-            currentRenderTexture.Release();
-            currentRenderTexture = null;
+            Destroy(currentTexture);
+            currentTexture = null;
         }
     }
 
