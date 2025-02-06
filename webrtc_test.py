@@ -214,30 +214,16 @@ async def handle_candidate(request):
         candidate_str = params["candidate"]
         sdp_mid = params.get("sdpMid")
         sdp_mline_index = params.get("sdpMLineIndex", 0)
-        
+
         print(f"Creating ICE candidate with: candidate={candidate_str}, sdpMid={sdp_mid}, sdpMLineIndex={sdp_mline_index}")
-        candidate = RTCIceCandidate(
-            component=1,
-            foundation="dummy",
-            priority=1,
-            ip="0.0.0.0",
-            protocol="udp",
-            port=0,
-            type="host",
-            sdpMid=sdp_mid,
-            sdpMLineIndex=sdp_mline_index,
-            tcpType=None,
-            relatedAddress=None,
-            relatedPort=None
-        )
-        candidate._raw = candidate_str
-        print(f"Created ICE candidate: {candidate.candidate}")
+        candidate = RTCIceCandidate(candidate=candidate_str, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
+        print(f"Created ICE candidate: {candidate_str}")
 
         # ICE candidateをすべてのPeerConnectionに追加
         # 注：実際のアプリケーションでは、適切なPeerConnectionを特定する方法が必要かもしれません
         for pc in pcs:
             await pc.addIceCandidate(candidate)
-        
+
         return web.Response(text="OK")
     except Exception as e:
         print(f"Error handling candidate: {e}")
