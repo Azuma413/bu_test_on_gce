@@ -216,7 +216,7 @@ async def handle_candidate(request):
         sdp_mline_index = params.get("sdpMLineIndex", 0)
 
         print(f"Creating ICE candidate with: candidate={candidate_str}, sdpMid={sdp_mid}, sdpMLineIndex={sdp_mline_index}")
-        candidate = RTCIceCandidate(candidate=candidate_str, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
+        candidate = RTCIceCandidate(candidate_str, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
         print(f"Created ICE candidate: {candidate_str}")
 
         # ICE candidateをすべてのPeerConnectionに追加
