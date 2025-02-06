@@ -222,7 +222,7 @@ async def main():
     logging.basicConfig(level=logging.INFO)
 
     ssl_context = ssl.SSLContext()
-    ssl_context.load_cert_chain("./server.crt", "./server.key")
+    ssl_context.load_cert_chain("./cert/server.crt", "./cert/server.key")
 
     app = web.Application()
     app.on_shutdown.append(on_shutdown)

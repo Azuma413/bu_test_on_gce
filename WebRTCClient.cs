@@ -47,7 +47,7 @@ public class WebRTCClient : MonoBehaviour
         };
 
         peerConnection = new RTCPeerConnection(ref configuration);
-        
+
         // ICE candidate イベントハンドラの設定
         peerConnection.OnIceCandidate = candidate =>
         {
@@ -55,7 +55,7 @@ public class WebRTCClient : MonoBehaviour
             Debug.Log($"OnIceCandidate: {candidate.Candidate}");
             // ICE candidateの送信処理を必要に応じて実装
         };
-        
+
         peerConnection.OnIceConnectionChange = state =>
         {
             Debug.Log($"ICE Connection State: {state}");
@@ -96,7 +96,7 @@ public class WebRTCClient : MonoBehaviour
 
                         // テクスチャを変換してRenderTextureに描画
                         Graphics.Blit(tex2D, currentRenderTexture);
-                        
+
                         // currentRenderTextureの平均と分散を計算
                         var rtPixels = new Color[currentRenderTexture.width * currentRenderTexture.height];
                         RenderTexture.active = currentRenderTexture;
