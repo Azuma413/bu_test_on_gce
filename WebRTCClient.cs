@@ -6,6 +6,7 @@ using UnityEngine.Networking;
 using System.Text;
 using System.Collections;
 using System.Linq;
+using UnityEngine.Experimental.Rendering;
 
 public class WebRTCClient : MonoBehaviour
 {
@@ -15,7 +16,9 @@ public class WebRTCClient : MonoBehaviour
     private RTCPeerConnection peerConnection;
     private MediaStream videoStream;
     private Texture2D currentTexture;
+    private Texture2D convertedTexture;
     private string connectionId;
+    private Coroutine convertFrameCoroutine;
     private System.Collections.Generic.List<RTCIceCandidate> pendingCandidates = new System.Collections.Generic.List<RTCIceCandidate>();
     
     // 証明書検証をスキップするための設定
@@ -41,6 +44,7 @@ public class WebRTCClient : MonoBehaviour
 
     private void StartConnection()
     {
+        StartCoroutine(WebRTC.Update());
         var configuration = new RTCConfiguration
         {
             iceServers = new[] { 
@@ -88,26 +92,31 @@ public class WebRTCClient : MonoBehaviour
                 {
                     if (texture is Texture2D tex2D)
                     {
-                        // 前のテクスチャを破棄
-                        if (currentTexture != null)
+                        var supportedFormat = WebRTC.GetSupportedGraphicsFormat(SystemInfo.graphicsDeviceType);
+                        
+                        if (tex2D.graphicsFormat != supportedFormat)
                         {
-                            Destroy(currentTexture);
+                            // Create or reuse converted texture with correct format
+                            if (convertedTexture == null || convertedTexture.width != tex2D.width || convertedTexture.height != tex2D.height)
+                            {
+                                if (convertedTexture != null)
+                                    Destroy(convertedTexture);
+                                convertedTexture = new Texture2D(tex2D.width, tex2D.height, supportedFormat, TextureCreationFlags.None);
+                            }
+                            
+                            // Convert texture to supported format
+                            Graphics.ConvertTexture(tex2D, convertedTexture);
+                            currentTexture = convertedTexture;
+                        }
+                        else
+                        {
+                            currentTexture = tex2D;
                         }
 
-                        Debug.Log($"Received texture format: {tex2D.format}, size: {tex2D.width}x{tex2D.height}");
-                        
-                        // Create a copy of the received texture using RenderTexture
-                        RenderTexture rt = RenderTexture.GetTemporary(tex2D.width, tex2D.height, 0);
-                        Graphics.Blit(tex2D, rt);
-                        Texture2D copiedTexture = new Texture2D(tex2D.width, tex2D.height, tex2D.format, false);
-                        RenderTexture.active = rt;
-                        copiedTexture.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
-                        copiedTexture.Apply();
-                        RenderTexture.active = null;
-                        RenderTexture.ReleaseTemporary(rt);
-                        
-                        // Get pixel data from the copied texture
-                        Color32[] pixels = copiedTexture.GetPixels32();
+                        Debug.Log($"Received texture format: {currentTexture.graphicsFormat}, size: {currentTexture.width}x{currentTexture.height}");
+
+                        // Get pixel data from the properly formatted texture
+                        Color32[] pixels = currentTexture.GetPixels32();
 
                         // カラーチャンネル別に統計を計算
                         double[] sums = new double[3];
@@ -116,7 +125,6 @@ public class WebRTCClient : MonoBehaviour
 
                         foreach (Color32 pixel in pixels)
                         {
-                            // BGRAの順序で値を収集
                             sums[0] += pixel.b;      // Blue
                             sums[1] += pixel.g;      // Green
                             sums[2] += pixel.r;      // Red
@@ -141,8 +149,7 @@ public class WebRTCClient : MonoBehaviour
                         Debug.Log($"Color Means: R={means[2]:F3}, G={means[1]:F3}, B={means[0]:F3}");
                         Debug.Log($"Color Variance: {totalVariance:F3}");
 
-                        // Use the copied texture for display
-                        currentTexture = copiedTexture;
+                        // Set the display texture
                         displayImage.texture = currentTexture;
                         displayImage.color = Color.white;
                     }
@@ -261,11 +268,21 @@ public class WebRTCClient : MonoBehaviour
         }
 
         // テクスチャのクリーンアップ
-        if (currentTexture != null)
-        {
-            Destroy(currentTexture);
-            currentTexture = null;
-        }
+            if (convertFrameCoroutine != null)
+            {
+                StopCoroutine(convertFrameCoroutine);
+                convertFrameCoroutine = null;
+            }
+            
+            if (convertedTexture != null)
+            {
+                Destroy(convertedTexture);
+                convertedTexture = null;
+            }
+            if (currentTexture != null && currentTexture != convertedTexture)
+            {
+                currentTexture = null; // Don't destroy as it's managed by WebRTC
+            }
     }
 
     private IEnumerator SendCandidate(RTCIceCandidate candidate)
