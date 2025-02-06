@@ -145,7 +145,7 @@ class ScreenCaptureTrack(MediaStreamTrack):
             img = np.array(screen) # RGBA
             # RとBを入れ替える
             img = img[:, :, [2, 1, 0, 3]]
-            frame = av.VideoFrame.from_ndarray(img, format="rgba")
+            frame = av.VideoFrame.from_ndarray(img, format="bgra")  # BGRAフォーマットとして送信
             pts, time_base = await self.next_timestamp()
             frame.pts = pts
             frame.time_base = time_base

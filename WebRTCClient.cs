@@ -96,64 +96,53 @@ public class WebRTCClient : MonoBehaviour
 
                         Debug.Log($"Received texture format: {tex2D.format}, size: {tex2D.width}x{tex2D.height}");
                         
-                        // 元のテクスチャのピクセルデータを取得
-                        var sourcePixels = tex2D.GetPixels32();
+                        // Create a copy of the received texture using RenderTexture
+                        RenderTexture rt = RenderTexture.GetTemporary(tex2D.width, tex2D.height, 0);
+                        Graphics.Blit(tex2D, rt);
+                        Texture2D copiedTexture = new Texture2D(tex2D.width, tex2D.height, tex2D.format, false);
+                        RenderTexture.active = rt;
+                        copiedTexture.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+                        copiedTexture.Apply();
+                        RenderTexture.active = null;
+                        RenderTexture.ReleaseTemporary(rt);
                         
-                        // 新しいテクスチャを作成（明示的にRGBA32フォーマットを使用）
-                        var correctedTex = new Texture2D(tex2D.width, tex2D.height, TextureFormat.RGBA32, false);
-                        var newPixels = new Color32[sourcePixels.Length];
-                        
-                        // ピクセルデータを処理
-                        for (int i = 0; i < sourcePixels.Length; i++)
+                        // Get pixel data from the copied texture
+                        Color32[] pixels = copiedTexture.GetPixels32();
+
+                        // カラーチャンネル別に統計を計算
+                        double[] sums = new double[3];
+                        double[] sumSquares = new double[3];
+                        int pixelCount = pixels.Length;
+
+                        foreach (Color32 pixel in pixels)
                         {
-                            var pixel = sourcePixels[i];
-                            newPixels[i] = new Color32(
-                                pixel.r,  // R
-                                pixel.g,  // G
-                                pixel.b,  // B
-                                255      // A = 255 (完全な不透明)
-                            );
-                        }
-                        
-                        // 新しいピクセルデータを適用
-                        correctedTex.SetPixels32(newPixels);
-                        correctedTex.Apply();
-                        
-                        // 統計情報の計算
-                        long[] sums = new long[3] { 0, 0, 0 };
-                        long[] sumSquares = new long[3] { 0, 0, 0 };
-                        int pixelCount = newPixels.Length;
-                        
-                        foreach (var pixel in newPixels)
-                        {
-                            // R, G, Bの値を収集
-                            sums[0] += pixel.r;
-                            sums[1] += pixel.g;
-                            sums[2] += pixel.b;
-                            
-                            // 二乗和を計算
-                            sumSquares[0] += pixel.r * pixel.r;
+                            // BGRAの順序で値を収集
+                            sums[0] += pixel.b;      // Blue
+                            sums[1] += pixel.g;      // Green
+                            sums[2] += pixel.r;      // Red
+
+                            sumSquares[0] += pixel.b * pixel.b;
                             sumSquares[1] += pixel.g * pixel.g;
-                            sumSquares[2] += pixel.b * pixel.b;
+                            sumSquares[2] += pixel.r * pixel.r;
                         }
-                        
-                        // 平均と分散を計算
-                        float[] means = new float[3];
-                        float[] variances = new float[3];
-                        
+
+                        // 平均と分散を計算（倍精度で計算）
+                        double[] means = new double[3];
+                        double[] variances = new double[3];
+
                         for (int c = 0; c < 3; c++)
                         {
-                            means[c] = (float)sums[c] / pixelCount;
-                            variances[c] = ((float)sumSquares[c] / pixelCount) - (means[c] * means[c]);
+                            means[c] = sums[c] / pixelCount;
+                            variances[c] = (sumSquares[c] / pixelCount) - (means[c] * means[c]);
                         }
-                        
-                        float totalVariance = (variances[0] + variances[1] + variances[2]) / 3.0f;
-                        
-                        Debug.Log($"Color Means: R={means[0]:F3}, G={means[1]:F3}, B={means[2]:F3}");
+
+                        double totalVariance = (variances[0] + variances[1] + variances[2]) / 3.0;
+
+                        Debug.Log($"Color Means: R={means[2]:F3}, G={means[1]:F3}, B={means[0]:F3}");
                         Debug.Log($"Color Variance: {totalVariance:F3}");
-                        
-                        // テクスチャを保存して表示
-                        currentTexture = correctedTex;
+
+                        // Use the copied texture for display
+                        currentTexture = copiedTexture;
                         displayImage.texture = currentTexture;
                         displayImage.color = Color.white;
                     }
