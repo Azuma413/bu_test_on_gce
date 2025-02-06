@@ -15,6 +15,7 @@ public class WebRTCClient : MonoBehaviour
     private RTCPeerConnection peerConnection;
     private MediaStream videoStream;
     private RenderTexture currentRenderTexture;
+    private string connectionId;
     
     // 証明書検証をスキップするための設定
     class AcceptAllCertificatesSignedWithAnyPublicKey : CertificateHandler
@@ -49,12 +50,12 @@ public class WebRTCClient : MonoBehaviour
         peerConnection = new RTCPeerConnection(ref configuration);
 
         // ICE candidate イベントハンドラの設定
-peerConnection.OnIceCandidate = candidate =>
-{
-    if (candidate == null) return;
-    Debug.Log($"OnIceCandidate: {candidate.Candidate}");
-    StartCoroutine(SendCandidate(candidate));
-};
+        peerConnection.OnIceCandidate = candidate =>
+        {
+            if (candidate == null) return;
+            Debug.Log($"OnIceCandidate: {candidate.Candidate}");
+            StartCoroutine(SendCandidate(candidate));
+        };
 
         peerConnection.OnIceConnectionChange = state =>
         {
@@ -181,6 +182,7 @@ peerConnection.OnIceCandidate = candidate =>
 
             // Parse answer
             var response = JsonUtility.FromJson<SignalingMessage>(request.downloadHandler.text);
+            connectionId = response.connectionId;  // Store the connection ID
             RTCSessionDescription answer = new RTCSessionDescription
             {
                 type = (RTCSdpType)Enum.Parse(typeof(RTCSdpType), response.type, true),
@@ -228,7 +230,8 @@ peerConnection.OnIceCandidate = candidate =>
         {
             candidate = candidate.Candidate,
             sdpMid = candidate.SdpMid,
-            sdpMLineIndex = candidate.SdpMLineIndex ?? 0
+            sdpMLineIndex = candidate.SdpMLineIndex ?? 0,
+            connectionId = connectionId
         };
         var jsonCandidate = JsonUtility.ToJson(candMsg);
 
@@ -257,6 +260,7 @@ peerConnection.OnIceCandidate = candidate =>
         public string candidate;
         public string sdpMid;
         public int sdpMLineIndex;
+        public string connectionId;
     }
 
     [Serializable]
@@ -264,5 +268,6 @@ peerConnection.OnIceCandidate = candidate =>
     {
         public string sdp;
         public string type;
+        public string connectionId;
     }
 }

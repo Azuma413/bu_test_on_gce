@@ -163,14 +163,19 @@ async def javascript(request):
     content = open(os.path.join(ROOT, "client.js"), "r").read()
     return web.Response(content_type="application/javascript", text=content)
 
-pcs = set()
+import uuid
+
+# Dictionary to store peer connections with their IDs
+pcs = {}
 
 async def offer(request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
+    # Generate unique ID for this connection
+    connection_id = str(uuid.uuid4())
     pc = RTCPeerConnection()
-    pcs.add(pc)
+    pcs[connection_id] = pc
 
     # Connection state monitoring
     @pc.on("connectionstatechange")
@@ -202,27 +207,77 @@ async def offer(request):
 
     return web.Response(
         content_type="application/json",
-        text=json.dumps(
-            {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
-        ),
+        text=json.dumps({
+            "sdp": pc.localDescription.sdp,
+            "type": pc.localDescription.type,
+            "connectionId": connection_id
+        }),
     )
+
+def parse_candidate(candidate_str):
+    # candidate:1920441499 1 tcp 1518283007 240d:1e:126:8605:3beb:aee7:7c31:ac39 51846 typ host tcptype passive ...
+    parts = candidate_str.split()
+    if not parts[0].startswith("candidate:"):
+        return None
+    
+    foundation = parts[0].split(":")[1]
+    component = int(parts[1])
+    protocol = parts[2]
+    priority = int(parts[3])
+    ip = parts[4]
+    port = int(parts[5])
+    
+    # find type
+    try:
+        type_index = parts.index("typ")
+        candidate_type = parts[type_index + 1]
+    except ValueError:
+        candidate_type = "host"  # default type
+    
+    return {
+        "foundation": foundation,
+        "component": component,
+        "protocol": protocol,
+        "priority": priority,
+        "ip": ip,
+        "port": port,
+        "type": candidate_type,
+    }
 
 async def handle_candidate(request):
     try:
         params = await request.json()
         print("Received candidate params:", params)
+        connection_id = params.get("connectionId")
+        
+        if not connection_id or connection_id not in pcs:
+            raise ValueError("Invalid or missing connection ID")
+            
+        pc = pcs[connection_id]
         candidate_str = params["candidate"]
         sdp_mid = params.get("sdpMid")
         sdp_mline_index = params.get("sdpMLineIndex", 0)
 
-        print(f"Creating ICE candidate with: candidate={candidate_str}, sdpMid={sdp_mid}, sdpMLineIndex={sdp_mline_index}")
-        candidate = RTCIceCandidate(candidate_str, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
-        print(f"Created ICE candidate: {candidate_str}")
+        parsed = parse_candidate(candidate_str)
+        if parsed is None:
+            raise ValueError("Invalid candidate string")
 
-        # ICE candidateをすべてのPeerConnectionに追加
-        # 注：実際のアプリケーションでは、適切なPeerConnectionを特定する方法が必要かもしれません
-        for pc in pcs:
-            await pc.addIceCandidate(candidate)
+        print(f"Creating ICE candidate with parsed values: {parsed}")
+        candidate = RTCIceCandidate(
+            foundation=parsed["foundation"],
+            component=parsed["component"],
+            protocol=parsed["protocol"],
+            priority=parsed["priority"],
+            ip=parsed["ip"],
+            port=parsed["port"],
+            type=parsed["type"],
+            sdpMid=sdp_mid,
+            sdpMLineIndex=sdp_mline_index,
+        )
+        print(f"Created ICE candidate successfully")
+
+        # Add ICE candidate to the specific peer connection
+        await pc.addIceCandidate(candidate)
 
         return web.Response(text="OK")
     except Exception as e:
@@ -232,7 +287,7 @@ async def handle_candidate(request):
 async def on_shutdown(app):
     print("Cleaning up connections and resources...")
     # close peer connections
-    coros = [pc.close() for pc in pcs]
+    coros = [pc.close() for pc in pcs.values()]
     await asyncio.gather(*coros)
     pcs.clear()
     
