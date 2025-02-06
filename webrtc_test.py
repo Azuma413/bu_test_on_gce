@@ -143,6 +143,8 @@ class ScreenCaptureTrack(MediaStreamTrack):
 
             # Convert to format suitable for av
             img = np.array(screen) # RGBA
+            # RとBを入れ替える
+            img = img[:, :, [2, 1, 0, 3]]
             frame = av.VideoFrame.from_ndarray(img, format="rgba")
             pts, time_base = await self.next_timestamp()
             frame.pts = pts
@@ -206,20 +208,40 @@ async def offer(request):
     )
 
 async def handle_candidate(request):
-    params = await request.json()
-    candidate = RTCIceCandidate(
-        sdpMLineIndex=params.get("sdpMLineIndex", 0),
-        sdpMid=params.get("sdpMid"),
-        candidate=params["candidate"]
-    )
-    print(f"Received ICE candidate: {candidate.candidate}")
+    try:
+        params = await request.json()
+        print("Received candidate params:", params)
+        candidate_str = params["candidate"]
+        sdp_mid = params.get("sdpMid")
+        sdp_mline_index = params.get("sdpMLineIndex", 0)
+        
+        print(f"Creating ICE candidate with: candidate={candidate_str}, sdpMid={sdp_mid}, sdpMLineIndex={sdp_mline_index}")
+        candidate = RTCIceCandidate(
+            component=1,
+            foundation="dummy",
+            priority=1,
+            ip="0.0.0.0",
+            protocol="udp",
+            port=0,
+            type="host",
+            sdpMid=sdp_mid,
+            sdpMLineIndex=sdp_mline_index,
+            tcpType=None,
+            relatedAddress=None,
+            relatedPort=None
+        )
+        candidate._raw = candidate_str
+        print(f"Created ICE candidate: {candidate.candidate}")
 
-    # ICE candidateをすべてのPeerConnectionに追加
-    # 注：実際のアプリケーションでは、適切なPeerConnectionを特定する方法が必要かもしれません
-    for pc in pcs:
-        await pc.addIceCandidate(candidate)
-    
-    return web.Response(text="OK")
+        # ICE candidateをすべてのPeerConnectionに追加
+        # 注：実際のアプリケーションでは、適切なPeerConnectionを特定する方法が必要かもしれません
+        for pc in pcs:
+            await pc.addIceCandidate(candidate)
+        
+        return web.Response(text="OK")
+    except Exception as e:
+        print(f"Error handling candidate: {e}")
+        return web.Response(status=500, text=str(e))
 
 async def on_shutdown(app):
     print("Cleaning up connections and resources...")
