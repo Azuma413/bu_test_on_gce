@@ -49,12 +49,12 @@ public class WebRTCClient : MonoBehaviour
         peerConnection = new RTCPeerConnection(ref configuration);
 
         // ICE candidate イベントハンドラの設定
-        peerConnection.OnIceCandidate = candidate =>
-        {
-            if (candidate == null) return;
-            Debug.Log($"OnIceCandidate: {candidate.Candidate}");
-            // ICE candidateの送信処理を必要に応じて実装
-        };
+peerConnection.OnIceCandidate = candidate =>
+{
+    if (candidate == null) return;
+    Debug.Log($"OnIceCandidate: {candidate.Candidate}");
+    StartCoroutine(SendCandidate(candidate));
+};
 
         peerConnection.OnIceConnectionChange = state =>
         {
@@ -78,12 +78,6 @@ public class WebRTCClient : MonoBehaviour
                 {
                     if (texture is Texture2D tex2D)
                     {
-                        // デバッグのためにテクスチャに含まれるピクセルの平均と分散を計算
-                        var pixels = ((Texture2D)texture).GetPixels();
-                        var avg = pixels.Average(p => p.grayscale);
-                        var variance = pixels.Average(p => (p.grayscale - avg) * (p.grayscale - avg));
-                        Debug.Log($"Average: {avg}, Variance: {variance}");
-
                         // 前のRenderTextureを解放
                         if (currentRenderTexture != null)
                         {
@@ -91,31 +85,40 @@ public class WebRTCClient : MonoBehaviour
                         }
 
                         // RenderTextureをRGBA32フォーマットで作成
-                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.RGBA32);
+                        currentRenderTexture = new RenderTexture(tex2D.width, tex2D.height, 0, RenderTextureFormat.ARGB32);
                         currentRenderTexture.Create();
 
                         // テクスチャを変換してRenderTextureに描画
                         Graphics.Blit(tex2D, currentRenderTexture);
 
                         // currentRenderTextureの平均と分散を計算
-                        var rtPixels = new Color[currentRenderTexture.width * currentRenderTexture.height];
+                        Texture2D tempTexture = new Texture2D(currentRenderTexture.width, currentRenderTexture.height, TextureFormat.RGBA32, false);
                         RenderTexture.active = currentRenderTexture;
-                        rtPixels = currentRenderTexture.GetPixels();
+                        tempTexture.ReadPixels(new Rect(0, 0, currentRenderTexture.width, currentRenderTexture.height), 0, 0);
+                        tempTexture.Apply();
+                        RenderTexture.active = null;
+
+                        var rtPixels = tempTexture.GetPixels();
                         var rtAvg = rtPixels.Average(p => p.grayscale);
                         var rtVariance = rtPixels.Average(p => (p.grayscale - rtAvg) * (p.grayscale - rtAvg));
                         Debug.Log($"RT Average: {rtAvg}, RT Variance: {rtVariance}");
 
+                        // Use the currentRenderTexture for display
                         displayImage.texture = currentRenderTexture;
+                        
+                        // Clean up temporary texture
+                        Destroy(tempTexture);
                     }
                     else
                     {
                         Debug.LogWarning("Texture is not Texture2D");
                         displayImage.texture = texture;
                     }
-                    displayImage.color = Color.white; // 不透明度を最大に設定
+                    displayImage.color = Color.white; // Set alpha to 1
                 };
             }
         };
+
         // Start negotiation
         StartCoroutine(Negotiate());
     }
@@ -217,6 +220,43 @@ public class WebRTCClient : MonoBehaviour
             currentRenderTexture.Release();
             currentRenderTexture = null;
         }
+    }
+
+    private IEnumerator SendCandidate(RTCIceCandidate candidate)
+    {
+        CandidateMessage candMsg = new CandidateMessage
+        {
+            candidate = candidate.Candidate,
+            sdpMid = candidate.SdpMid,
+            sdpMLineIndex = candidate.SdpMLineIndex ?? 0
+        };
+        var jsonCandidate = JsonUtility.ToJson(candMsg);
+
+        using (var request = new UnityWebRequest($"{serverUrl}/candidate", "POST"))
+        {
+            request.certificateHandler = new AcceptAllCertificatesSignedWithAnyPublicKey();
+            byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonCandidate);
+            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"Failed to send candidate: {request.error}");
+                yield break;
+            }
+            // You can parse server response here if needed for remote candidate
+        }
+    }
+
+    [Serializable]
+    private class CandidateMessage
+    {
+        public string candidate;
+        public string sdpMid;
+        public int sdpMLineIndex;
     }
 
     [Serializable]

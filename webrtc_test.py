@@ -7,7 +7,7 @@ import mss
 import numpy as np
 import av
 from aiohttp import web
-from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig, BrowserContextConfig
 from dotenv import load_dotenv
@@ -205,6 +205,22 @@ async def offer(request):
         ),
     )
 
+async def handle_candidate(request):
+    params = await request.json()
+    candidate = RTCIceCandidate(
+        sdpMLineIndex=params.get("sdpMLineIndex", 0),
+        sdpMid=params.get("sdpMid"),
+        candidate=params["candidate"]
+    )
+    print(f"Received ICE candidate: {candidate.candidate}")
+
+    # ICE candidateをすべてのPeerConnectionに追加
+    # 注：実際のアプリケーションでは、適切なPeerConnectionを特定する方法が必要かもしれません
+    for pc in pcs:
+        await pc.addIceCandidate(candidate)
+    
+    return web.Response(text="OK")
+
 async def on_shutdown(app):
     print("Cleaning up connections and resources...")
     # close peer connections
@@ -229,6 +245,7 @@ async def main():
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
+    app.router.add_post("/candidate", handle_candidate)
     
     print("Server running on https://34.133.108.164:8443")
     # Initialize browser controller
